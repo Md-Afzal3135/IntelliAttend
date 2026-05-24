@@ -999,7 +999,15 @@ def student_self_mark(request):
             status=404
         )
 
-    # QR validation bypassed as teacher QR feature is removed
+    # Validate rotating QR code TOTP if provided
+    if qr_data and str(qr_data).strip() and session.qr_secret_seed:
+        import pyotp
+        totp = pyotp.TOTP(session.qr_secret_seed, interval=15)
+        if not totp.verify(str(qr_data).strip(), valid_window=1):
+            return Response(
+                {'error': 'Invalid or expired QR code.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
     # ── Step 3: Check not already marked ───────────────────────────────────
     if AttendanceRecord.objects.filter(session=session, student=student, status='present').exists():

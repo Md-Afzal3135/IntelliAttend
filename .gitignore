@@ -1,0 +1,166 @@
+# ==============================================================================
+# IntelliAttend — Optimized Git Ignore Configuration
+# ==============================================================================
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 1. OS & Editor Specific
+# ──────────────────────────────────────────────────────────────────────────────
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Icon\r
+
+# IDE / Editors (VS Code, JetBrains, Vim, Xcode)
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+.project
+.settings/
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 2. Environment & Secrets (NEVER push these to GitHub)
+# ──────────────────────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+*.env.*
+
+# Allow tracking of template/example environment files
+!.env.example
+!*.env.example
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 3. Python & Django Backend
+# ──────────────────────────────────────────────────────────────────────────────
+# Cache & Compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Virtual Environments
+venv/
+env/
+.venv/
+.env/
+ENV/
+env.bak/
+venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Distribution / Packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Testing & Coverage
+htmlcov/
+.tox/
+.nosexml/
+nosetests.xml
+.coverage
+.coverage.*
+.cache
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Django Specific
+*.log
+staticfiles/
+
+# SQLite Database (Exclude local dev database files, but keep migrations!)
+db.sqlite3
+*.sqlite3
+*.sqlite3-journal
+db.sqlite3-shm
+db.sqlite3-wal
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 4. React / Node / Vite Frontend
+# ──────────────────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+frontend/dist/
+frontend/.vite/
+.eslintcache
+.parcel-cache
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 5. AI Service & Machine Learning Models
+# ──────────────────────────────────────────────────────────────────────────────
+# Large files, model weights, serialized files, face encodings, or datasets
+*.pkl
+*.npy
+*.h5
+*.onnx
+*.pb
+*.pt
+*.pth
+*.weights
+*.bin
+*.tflite
+**/models/
+**/face_recognition_models/
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 6. Project-Specific Exclusions (Media & Automated Outputs)
+# ──────────────────────────────────────────────────────────────────────────────
+# Ignore user-uploaded media files to prevent personal photos in the repo,
+# but keep the folder structures in git using .gitkeep files.
+media/*
+!media/.gitkeep
+media/avatars/*
+!media/avatars/.gitkeep
+media/faces/*
+!media/faces/.gitkeep
+
+# Ignore automated screenshots and demo run outputs
+run_screenshots/
+err_*.png
+test_avatar.png
+backend/test_avatar.png

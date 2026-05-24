@@ -1,0 +1,278 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Root Variables ─────────────────────────────────────────────────── */
+:root {
+  --color-primary: #4f46e5;
+  --color-primary-light: #818cf8;
+  --color-bg: #0f0f1a;
+  --color-surface: #14142b;
+  --color-surface-2: #1a1a35;
+  --color-border: rgba(99,102,241,0.2);
+  --color-text: #f1f5f9;
+  --color-text-muted: #94a3b8;
+}
+
+/* ─── Light Theme Overrides ─────────────────────────────────────────── */
+html:not(.dark) {
+  --color-bg: #f1f5f9;
+  --color-surface: #ffffff;
+  --color-surface-2: #f8fafc;
+  --color-border: rgba(99,102,241,0.15);
+  --color-text: #0f172a;
+  --color-text-muted: #64748b;
+}
+
+/* Override Tailwind surface classes in light mode */
+html:not(.dark) .bg-surface-900 { background-color: #f1f5f9 !important; }
+html:not(.dark) .bg-surface-800,
+html:not(.dark) .bg-surface-800\/90,
+html:not(.dark) .bg-surface-800\/80,
+html:not(.dark) .bg-surface-800\/60 { background-color: rgba(255,255,255,0.95) !important; }
+html:not(.dark) .bg-surface-700,
+html:not(.dark) .bg-surface-700\/50,
+html:not(.dark) .bg-surface-700\/80 { background-color: #f1f5f9 !important; }
+html:not(.dark) .bg-surface-600 { background-color: #e2e8f0 !important; }
+
+html:not(.dark) .border-primary-500\/10 { border-color: rgba(99,102,241,0.12) !important; }
+html:not(.dark) .border-primary-500\/20 { border-color: rgba(99,102,241,0.2) !important; }
+
+html:not(.dark) .text-white  { color: #0f172a !important; }
+html:not(.dark) .text-slate-300 { color: #334155 !important; }
+html:not(.dark) .text-slate-400 { color: #475569 !important; }
+html:not(.dark) .text-slate-500 { color: #64748b !important; }
+
+html:not(.dark) .glass-card {
+  background: rgba(255,255,255,0.9) !important;
+  border-color: rgba(99,102,241,0.15) !important;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.06) !important;
+}
+
+html:not(.dark) .input-field {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) .nav-item  { color: #475569 !important; }
+html:not(.dark) .nav-item:hover { background-color: rgba(99,102,241,0.08) !important; color: #0f172a !important; }
+html:not(.dark) .nav-item-active { color: #4f46e5 !important; background-color: rgba(99,102,241,0.12) !important; }
+
+html:not(.dark) .data-table tbody td { color: #334155 !important; }
+html:not(.dark) .data-table thead th { color: #64748b !important; }
+html:not(.dark) .data-table tbody tr:hover { background-color: rgba(99,102,241,0.04) !important; }
+
+html:not(.dark) .shimmer {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%) !important;
+}
+
+html:not(.dark) .recharts-default-tooltip {
+  background: #ffffff !important;
+  border-color: rgba(99,102,241,0.2) !important;
+}
+
+
+/* ─── Base Styles ────────────────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-surface);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(99,102,241,0.4);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(99,102,241,0.7);
+}
+
+/* ─── Glass Components ───────────────────────────────────────────────── */
+@layer components {
+  .glass-card {
+    @apply bg-surface-800/60 backdrop-blur-md border border-primary-500/20 rounded-2xl shadow-glass;
+  }
+
+  .glass-card-hover {
+    @apply glass-card transition-all duration-300 hover:border-primary-500/40 hover:shadow-glow-sm hover:-translate-y-1;
+  }
+
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-500 text-white font-semibold px-6 py-3 rounded-xl
+           transition-all duration-200 hover:shadow-glow-sm hover:-translate-y-0.5 active:scale-95
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0;
+  }
+
+  .btn-secondary {
+    @apply bg-surface-600 hover:bg-surface-500 text-slate-200 font-medium px-6 py-3 rounded-xl
+           border border-primary-500/20 hover:border-primary-500/40
+           transition-all duration-200 hover:-translate-y-0.5 active:scale-95;
+  }
+
+  .btn-ghost {
+    @apply text-slate-400 hover:text-white hover:bg-surface-600 font-medium px-4 py-2 rounded-lg
+           transition-all duration-200;
+  }
+
+  .btn-danger {
+    @apply bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white font-medium px-4 py-2 rounded-lg
+           border border-red-500/30 hover:border-red-500 transition-all duration-200;
+  }
+
+  .input-field {
+    @apply w-full bg-surface-700/80 border border-primary-500/20 text-white placeholder-slate-500
+           rounded-xl px-4 py-3 outline-none focus:border-primary-500/60 focus:ring-2 focus:ring-primary-500/20
+           transition-all duration-200;
+  }
+
+  .stat-card {
+    @apply glass-card p-6 flex flex-col gap-4;
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400
+           hover:text-white hover:bg-primary-600/20 hover:border-primary-500/30
+           border border-transparent transition-all duration-200 cursor-pointer text-sm font-medium;
+  }
+
+  .nav-item-active {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl text-white bg-primary-600/30
+           border border-primary-500/40 shadow-glow-sm text-sm font-medium cursor-pointer;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold;
+  }
+
+  .badge-present {
+    @apply badge bg-emerald-500/20 text-emerald-400 border border-emerald-500/30;
+  }
+
+  .badge-absent {
+    @apply badge bg-red-500/20 text-red-400 border border-red-500/30;
+  }
+
+  .badge-late {
+    @apply badge bg-amber-500/20 text-amber-400 border border-amber-500/30;
+  }
+
+  .badge-active {
+    @apply badge bg-blue-500/20 text-blue-400 border border-blue-500/30;
+  }
+
+  .page-title {
+    @apply font-heading text-2xl font-bold text-white;
+  }
+
+  .section-title {
+    @apply font-heading text-lg font-semibold text-white;
+  }
+
+  .text-muted {
+    @apply text-slate-400 text-sm;
+  }
+
+  .divider {
+    @apply border-t border-primary-500/10;
+  }
+
+  /* Live pulse indicator */
+  .live-dot {
+    @apply w-2 h-2 rounded-full bg-emerald-500 animate-pulse-slow;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-400 via-purple-400 to-pink-400 bg-clip-text text-transparent;
+  }
+
+  /* Table styles */
+  .data-table {
+    @apply w-full text-sm text-left;
+  }
+  .data-table thead tr {
+    @apply border-b border-primary-500/10;
+  }
+  .data-table thead th {
+    @apply py-3 px-4 text-slate-400 font-medium text-xs uppercase tracking-wider;
+  }
+  .data-table tbody tr {
+    @apply border-b border-surface-700/50 hover:bg-primary-600/5 transition-colors duration-150;
+  }
+  .data-table tbody td {
+    @apply py-3 px-4 text-slate-300;
+  }
+}
+
+/* ─── Animations ─────────────────────────────────────────────────────── */
+.animate-in {
+  animation: slideUp 0.4s ease-out forwards;
+}
+
+/* ─── Webcam overlay ────────────────────────────────────────────────── */
+.face-scan-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 200px;
+  height: 200px;
+  border: 2px solid rgba(99,102,241,0.8);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(99,102,241,0.2), 0 0 30px rgba(99,102,241,0.4);
+  animation: glow 2s ease-in-out infinite alternate;
+}
+
+.face-scan-corner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-color: #818cf8;
+  border-style: solid;
+}
+
+/* ─── Chart customizations ───────────────────────────────────────────── */
+.recharts-cartesian-grid line {
+  stroke: rgba(99,102,241,0.1) !important;
+}
+
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: #14142b !important;
+  border: 1px solid rgba(99,102,241,0.3) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+}
+
+/* ─── Loading shimmer ────────────────────────────────────────────────── */
+.shimmer {
+  background: linear-gradient(90deg, #1a1a35 25%, #21213f 50%, #1a1a35 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}

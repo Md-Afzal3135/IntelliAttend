@@ -174,7 +174,7 @@ class ForgotPasswordView(APIView):
         except Exception as e:
             import logging
             logging.getLogger('intelliattend').error('Email send failed: %s', e)
-            # In dev (console backend) this still works; in prod log the error
+            return Response({'error': f'Failed to send password reset email: {str(e)}'}, status=500)
 
         return Response({'message': 'If this email is registered, a reset link has been sent.'})
 

@@ -128,16 +128,14 @@ SIMPLE_JWT = {
 }
 
 # CORS
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:5175",
-    "http://localhost:5176",
-    "http://localhost:5177",
-    "http://localhost:5178",
-    "http://localhost:3000",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:5176",
+    "https://intelliattend-mu.vercel.app",
+    "https://localhost:5173",
+    "https://localhost:3000",
+]
+CSRF_TRUSTED_ORIGINS = [
+    "https://intelliattend-mu.vercel.app",
 ]
 CORS_ALLOW_CREDENTIALS = True
 

@@ -1,19 +1,21 @@
 FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
     libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY requirements.txt .
+# 1. Install pre-compiled heavy wheels directly from links to bypass 8GB compilation crash
+RUN pip install --no-cache-dir \
+    https://github.com/themagicalmammal/Automated-Attendance-System/releases/download/v1.0.0/dlib-19.24.1-cp311-cp311-linux_x86_64.whl \
+    face-recognition \
+    opencv-python-headless
 
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir face-recognition opencv-python-headless && \
-    pip install --no-cache-dir -r requirements.txt
+# 2. Install rest of the light dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

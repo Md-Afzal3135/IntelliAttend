@@ -8,7 +8,7 @@ pydantic==2.9.2
 
 # Core AI libraries (requires cmake and dlib — see install instructions below)
 face-recognition==1.3.0
-opencv-python==4.10.0.84
+opencv-python-headless==4.10.0.84
 mediapipe==0.10.14
 
 # To install AI libraries on macOS:

@@ -1,6 +1,6 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
-numpy==2.4.6
+numpy
 Pillow==10.4.0
 requests==2.3.2
 python-dotenv==1.2.2

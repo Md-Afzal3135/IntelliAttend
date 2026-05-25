@@ -118,11 +118,19 @@ function FaceUploadModal({ student, onClose, onSuccess }) {
     files.forEach(f => fd.append('images', f))
     try {
       const { data } = await studentsAPI.uploadFaces(student.id, fd)
-      toast.success(data.message)
-      onSuccess()
-      onClose()
-    } catch { toast.error('Upload failed') }
-    finally { setLoading(false) }
+      if (data.face_registered) {
+        toast.success(data.message)
+        onSuccess()
+        onClose()
+      } else {
+        toast.error(data.message)
+      }
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.response?.data?.error || 'Upload failed'
+      toast.error(detail)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (

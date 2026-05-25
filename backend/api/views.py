@@ -352,11 +352,26 @@ class StudentViewSet(viewsets.ModelViewSet):
         if not images:
             return Response({'error': 'No images provided.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        import base64
+        import logging
+        logger = logging.getLogger('intelliattend')
+
         face_image_urls = []
+        face_base64s = []
+
         for img in images:
             fi = FaceImage.objects.create(student=student, image=img)
             if request.build_absolute_uri:
                 face_image_urls.append(request.build_absolute_uri(fi.image.url))
+
+            # Encode image to base64 to send directly to the AI service
+            try:
+                img.seek(0)
+                img_bytes = img.read()
+                b64_str = base64.b64encode(img_bytes).decode('utf-8')
+                face_base64s.append(f"data:image/jpeg;base64,{b64_str}")
+            except Exception as e:
+                logger.error('Base64 encoding failed for uploaded image: %s', e)
 
         # Trigger AI service to encode faces
         ai_url = os.getenv('AI_SERVICE_URL', 'http://localhost:8001')
@@ -364,7 +379,9 @@ class StudentViewSet(viewsets.ModelViewSet):
             resp = requests.post(f"{ai_url}/encode", json={
                 'student_id': str(student.id),
                 'image_urls': face_image_urls,
+                'image_base64': face_base64s,
             }, timeout=30)
+            
             if resp.status_code == 200:
                 encodings = resp.json().get('encodings', [])
                 student.face_encodings = encodings
@@ -375,14 +392,21 @@ class StudentViewSet(viewsets.ModelViewSet):
                     'face_registered': True,
                     'encodings_count': len(encodings),
                 })
-        except requests.exceptions.RequestException:
-            # AI service not running — still save images
-            pass
-
-        return Response({
-            'message': f'{len(images)} image(s) uploaded. AI service unavailable — encoding pending.',
-            'face_registered': False,
-        })
+            else:
+                # Return the error response from AI service
+                try:
+                    err_data = resp.json()
+                except Exception:
+                    err_data = {'detail': resp.text}
+                return Response(err_data, status=resp.status_code)
+                
+        except requests.exceptions.RequestException as e:
+            logger.error('AI Service communication failed: %s', e)
+            return Response({
+                'detail': 'AI encoding service is offline. Please start the AI service.',
+                'error': str(e),
+                'face_registered': False,
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     @action(detail=True, methods=['delete'], url_path='clear-faces')
     def clear_faces(self, request, pk=None):

@@ -516,6 +516,10 @@ export default function AttendancePage() {
           .attendance-flex-container {
             flex-direction: column !important;
           }
+          .attendance-flex-container > div {
+            flex: none !important;
+            width: 100% !important;
+          }
         }
       `}</style>
     </div>

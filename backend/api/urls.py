@@ -14,6 +14,7 @@ from .views import (
     # New RBAC + Geofencing views
     CollegeConfigView, TeacherManagementViewSet,
     student_self_mark, active_sessions_for_student,
+    seed_database_view,
 )
 
 router = DefaultRouter()
@@ -53,6 +54,9 @@ urlpatterns = [
     # Student — GPS + Face attendance
     path('ai/student-mark/', student_self_mark, name='student-self-mark'),
     path('attendance/active-sessions/', active_sessions_for_student, name='active-sessions'),
+
+    # Seed Production Database
+    path('seed/', seed_database_view, name='seed-database'),
 
     # Router (students, departments, courses, subjects, sessions, records, admin/teachers)
     path('', include(router.urls)),

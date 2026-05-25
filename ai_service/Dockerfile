@@ -1,16 +1,15 @@
-FROM python:3.11-slim
-
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    libgl1 \
-    libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+FROM jess/face_recognition:latest
 
 WORKDIR /app
 
+# Only copy requirements first to check other light dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# Remove face-recognition and opencv from requirements temporarily during install 
+# because they are already pre-installed in this heavy base image!
+RUN sed -i '/face-recognition/d' requirements.txt && \
+    sed -i '/opencv-python/d' requirements.txt && \
+    pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

@@ -38,7 +38,8 @@ from .serializers import (
     SubjectSerializer, StudentListSerializer, StudentDetailSerializer,
     FaceImageSerializer, AttendanceSessionSerializer,
     AttendanceSessionListSerializer, AttendanceRecordSerializer,
-    CollegeConfigSerializer, TeacherListSerializer, TeacherCreateSerializer
+    CollegeConfigSerializer, TeacherListSerializer, TeacherCreateSerializer,
+    StudentDashboardSerializer
 )
 
 User = get_user_model()
@@ -267,9 +268,24 @@ class SubjectViewSet(viewsets.ModelViewSet):
         if user.role == 'teacher':
             from .models import Course as CourseModel
             course = serializer.validated_data.get('course') or CourseModel.objects.first()
-            serializer.save(teacher=user, course=course)
+            subject = serializer.save(teacher=user, course=course)
         else:
-            serializer.save()
+            subject = serializer.save()
+
+        # Auto-enrol all existing students in this course into the new subject
+        course = subject.course
+        students_in_course = Student.objects.filter(course=course)
+        new_enrollments = [
+            SubjectEnrollment(student=stu, subject=subject)
+            for stu in students_in_course
+        ]
+        if new_enrollments:
+            SubjectEnrollment.objects.bulk_create(new_enrollments, ignore_conflicts=True)
+            import logging
+            logging.getLogger('intelliattend').info(
+                "auto_enroll(subject_create): enrolled %d students in new subject '%s' (course=%s)",
+                len(new_enrollments), subject.name, course.name
+            )
 
     def perform_destroy(self, instance):
         user = self.request.user
@@ -1130,6 +1146,58 @@ def active_sessions_for_student(request):
     } for s in sessions]
 
     return Response({'sessions': data, 'count': len(data)})
+
+
+# ─── Student Dashboard ─────────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def student_dashboard(request):
+    """
+    GET /api/student/dashboard/
+    Returns the full dashboard payload for the logged-in student:
+      - Profile info (name, branch, course, roll number)
+      - assigned_subjects: list of subjects auto-enrolled from their course
+      - attendance_summary: overall + per-subject breakdown
+    """
+    try:
+        student = Student.objects.select_related(
+            'user', 'department', 'course'
+        ).prefetch_related(
+            'enrollments__subject__teacher',
+            'enrollments__subject__course',
+            'attendance_records__session__subject',
+        ).get(user=request.user)
+    except Student.DoesNotExist:
+        return Response({'error': 'Student profile not found.'}, status=404)
+
+    # Also compute per-subject attendance breakdown
+    from .models import AttendanceRecord as AR, AttendanceSession as AS
+    enrolled_subject_ids = list(
+        student.enrollments.values_list('subject_id', flat=True)
+    )
+    subject_stats = []
+    for enrollment in student.enrollments.select_related('subject__course', 'subject__teacher'):
+        subj = enrollment.subject
+        subj_sessions = AS.objects.filter(subject=subj)
+        subj_records = AR.objects.filter(student=student, session__in=subj_sessions)
+        s_total = subj_records.count()
+        s_present = subj_records.filter(status='present').count()
+        subject_stats.append({
+            'subject_id': str(subj.id),
+            'subject': subj.name,
+            'code': subj.code,
+            'credits': subj.credits,
+            'teacher_name': subj.teacher.get_full_name() if subj.teacher else None,
+            'total': s_total,
+            'present': s_present,
+            'absent': s_total - s_present,
+            'percentage': round((s_present / s_total * 100), 1) if s_total else 0,
+        })
+
+    data = StudentDashboardSerializer(student, context={'request': request}).data
+    data['subject_stats'] = subject_stats
+    return Response(data)
 
 
 @api_view(['GET', 'POST'])

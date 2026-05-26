@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Users, Plus, Search, Filter, Edit2, Trash2, Upload,
-  Camera, CheckCircle, XCircle, ChevronLeft, ChevronRight, X
+  Camera, CheckCircle, XCircle, ChevronLeft, ChevronRight, X, BookOpen
 } from 'lucide-react'
 import { studentsAPI, departmentsAPI, coursesAPI } from '../api'
 import toast from 'react-hot-toast'
@@ -251,7 +251,8 @@ export default function StudentManagement() {
             <thead><tr>
               <th>Student</th>
               <th>ID / Roll</th>
-              <th>Department</th>
+              <th>Department / Course</th>
+              <th>Subjects</th>
               <th>Year</th>
               <th>Attendance</th>
               <th>Face</th>
@@ -291,6 +292,16 @@ export default function StudentManagement() {
                   <td>
                     <p className="text-sm">{student.department_name || student.branch || student.department?.name || '—'}</p>
                     <p className="text-slate-500 text-xs">{student.course_name || student.course?.name || '—'}</p>
+                  </td>
+                  <td>
+                    {student.assigned_subjects_count != null ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-primary-500/15 text-primary-400 border border-primary-500/20">
+                        <BookOpen className="w-3 h-3" />
+                        {student.assigned_subjects_count} subject{student.assigned_subjects_count !== 1 ? 's' : ''}
+                      </span>
+                    ) : (
+                      <span className="text-slate-500 text-xs">—</span>
+                    )}
                   </td>
                   <td>Year {student.year}{student.section && ` - ${student.section}`}</td>
                   <td>

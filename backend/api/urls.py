@@ -16,6 +16,8 @@ from .views import (
     student_self_mark, active_sessions_for_student,
     seed_database_view, verify_and_mark_attendance,
     ai_health_check,
+    # Student Dashboard
+    student_dashboard,
 )
 
 router = DefaultRouter()
@@ -57,6 +59,9 @@ urlpatterns = [
     path('ai/student-mark/', student_self_mark, name='student-self-mark'),
     path('attendance/active-sessions/', active_sessions_for_student, name='active-sessions'),
     path('attendance/verify/', verify_and_mark_attendance, name='verify_attendance'),
+
+    # Student Dashboard (subjects + attendance)
+    path('student/dashboard/', student_dashboard, name='student-dashboard'),
 
     # Seed Production Database
     path('seed/', seed_database_view, name='seed-database'),

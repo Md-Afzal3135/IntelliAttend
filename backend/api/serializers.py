@@ -5,7 +5,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import (
     Department, Course, Student, FaceImage,
-    Subject, AttendanceSession, AttendanceRecord, CollegeConfig
+    Subject, SubjectEnrollment, AttendanceSession, AttendanceRecord, CollegeConfig
 )
 
 User = get_user_model()
@@ -146,6 +146,7 @@ class StudentListSerializer(serializers.ModelSerializer):
     branch_name = serializers.CharField(source='department.name', read_only=True)
     face_image_count = serializers.SerializerMethodField()
     attendance_percentage = serializers.SerializerMethodField()
+    assigned_subjects_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Student
@@ -153,7 +154,7 @@ class StudentListSerializer(serializers.ModelSerializer):
             'id', 'student_id', 'full_name', 'email',
             'department_name', 'course_name', 'branch', 'branch_name', 'year', 'section',
             'roll_number', 'face_registered', 'face_image_count',
-            'attendance_percentage', 'created_at'
+            'attendance_percentage', 'assigned_subjects_count', 'created_at'
         ]
 
     def get_face_image_count(self, obj):
@@ -165,6 +166,9 @@ class StudentListSerializer(serializers.ModelSerializer):
             return 0
         present = obj.attendance_records.filter(status='present').count()
         return round((present / total) * 100, 1)
+
+    def get_assigned_subjects_count(self, obj):
+        return obj.enrollments.count()
 
 
 class StudentDetailSerializer(serializers.ModelSerializer):
@@ -357,3 +361,68 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
             instance.set_password(password)
         instance.save()
         return instance
+
+
+# ─── Subject Enrollment ──────────────────────────────────────────────────────
+
+class SubjectEnrollmentSerializer(serializers.ModelSerializer):
+    """Nested representation of a student's enrolled subject."""
+    subject_id = serializers.UUIDField(source='subject.id', read_only=True)
+    name = serializers.CharField(source='subject.name', read_only=True)
+    code = serializers.CharField(source='subject.code', read_only=True)
+    credits = serializers.IntegerField(source='subject.credits', read_only=True)
+    teacher_name = serializers.SerializerMethodField()
+    course_name = serializers.CharField(source='subject.course.name', read_only=True)
+
+    class Meta:
+        model = SubjectEnrollment
+        fields = ['subject_id', 'name', 'code', 'credits', 'teacher_name', 'course_name', 'enrolled_at']
+
+    def get_teacher_name(self, obj):
+        if obj.subject.teacher:
+            return obj.subject.teacher.get_full_name()
+        return None
+
+
+class StudentDashboardSerializer(serializers.ModelSerializer):
+    """Full student dashboard payload including enrolled subjects and attendance stats."""
+    full_name = serializers.CharField(source='user.get_full_name', read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+    avatar_url = serializers.SerializerMethodField()
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    course_name = serializers.CharField(source='course.name', read_only=True)
+    assigned_subjects = serializers.SerializerMethodField()
+    attendance_summary = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Student
+        fields = [
+            'id', 'student_id', 'full_name', 'email', 'avatar_url',
+            'department_name', 'course_name', 'year', 'section', 'roll_number',
+            'face_registered', 'assigned_subjects', 'attendance_summary'
+        ]
+
+    def get_avatar_url(self, obj):
+        request = self.context.get('request')
+        if obj.user.avatar and request:
+            return request.build_absolute_uri(obj.user.avatar.url)
+        return None
+
+    def get_assigned_subjects(self, obj):
+        enrollments = obj.enrollments.select_related('subject__teacher', 'subject__course').all()
+        return SubjectEnrollmentSerializer(enrollments, many=True).data
+
+    def get_attendance_summary(self, obj):
+        from .models import AttendanceRecord as AR
+        records = AR.objects.filter(student=obj)
+        total = records.count()
+        present = records.filter(status='present').count()
+        absent = records.filter(status='absent').count()
+        late = records.filter(status='late').count()
+        return {
+            'total': total,
+            'present': present,
+            'absent': absent,
+            'late': late,
+            'percentage': round((present / total * 100), 1) if total else 0,
+        }

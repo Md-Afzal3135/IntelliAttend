@@ -145,3 +145,9 @@ export const studentAttendanceAPI = {
   activeSessions: () => API.get('/attendance/active-sessions/'),
   markAttendance: (data) => API.post('/ai/student-mark/', data),
 }
+
+// ─── Student Dashboard (subjects + attendance summary) ────────────────────────
+export const studentDashboardAPI = {
+  /** GET /api/student/dashboard/ */
+  get: () => API.get('/student/dashboard/'),
+}

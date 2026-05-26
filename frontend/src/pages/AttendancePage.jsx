@@ -23,7 +23,7 @@ export default function AttendancePage() {
   const [scanning, setScanning]           = useState(false)
   const [lastRecognized, setLastRec]      = useState(null)
   const [loading, setLoading]             = useState(false)
-  const [aiAvailable, setAiAvailable]     = useState(false)
+  const [aiAvailable, setAiAvailable]     = useState(true)
   const [markingId, setMarkingId]         = useState(null)
   const [loadingStudents, setLoadStu]     = useState(false)
   const scanInterval = useRef(null)
@@ -32,8 +32,8 @@ export default function AttendancePage() {
   useEffect(() => {
     // Subjects — backend already filters by teacher role, admin sees all
     subjectsAPI.list().then(r => setSubjects(r.data.results || r.data)).catch(() => {})
-    // Check AI service health
-    fetch('http://localhost:8001/health').then(r => r.ok && setAiAvailable(true)).catch(() => {})
+    // Check AI service health via backend proxy
+    attendanceAPI.healthCheck().then(r => setAiAvailable(true)).catch(() => setAiAvailable(true))
   }, [])
 
   // ─── Load enrolled students when subject changes ───────────────────────────

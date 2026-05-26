@@ -4,7 +4,7 @@ import {
   MapPin, Camera, CameraOff, CheckCircle, XCircle, AlertTriangle,
   Navigation, RefreshCw, ChevronDown, Loader, Shield, WifiOff
 } from 'lucide-react'
-import { studentAttendanceAPI } from '../api'
+import API, { studentAttendanceAPI } from '../api'
 
 const STATUS = {
   IDLE: 'idle',
@@ -149,30 +149,38 @@ export default function StudentAttendanceMark() {
     stopCamera()
 
     try {
-      const res = await studentAttendanceAPI.markAttendance({
-        latitude: gpsCoords.lat,
-        longitude: gpsCoords.lng,
-        session_id: selectedSession,
-        frame,
-        qr_data: qrCode.trim(),
+      const blob = await (await fetch(frame)).blob()
+      const formData = new FormData()
+      formData.append('image', blob, 'capture.jpg')
+      formData.append('session_id', selectedSession)
+      if (gpsCoords) {
+        formData.append('latitude', gpsCoords.lat)
+        formData.append('longitude', gpsCoords.lng)
+      }
+
+      // Send a POST request to our updated backend API endpoint
+      const res = await API.post('/attendance/verify/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       })
+
+      alert("Attendance marked successfully!")
       setSuccessData(res.data)
       setStatus(STATUS.SUCCESS)
     } catch (err) {
       const data = err.response?.data
       const code = err.response?.status
 
-      if (code === 403 && data?.error === 'Out of Campus Range') {
+      if (code === 400) {
+        setErrorMsg(data?.detail || data?.error || 'Face not recognized or verification failed.')
+        setStatus(STATUS.FACE_FAIL)
+      } else if (code === 403 && data?.error === 'Out of Campus Range') {
         setErrorMsg(data.detail || 'You are outside the campus boundary.')
         setStatus(STATUS.OUT_OF_RANGE)
-      } else if (code === 401 && data?.recognized === false) {
-        setErrorMsg(data.detail || 'Face not recognized. Please try again in good lighting.')
-        setStatus(STATUS.FACE_FAIL)
       } else if (code === 409) {
         setErrorMsg(data?.error || 'You have already marked attendance for this session.')
         setStatus(STATUS.SUCCESS)
         setSuccessData({ already_marked: true, message: data?.error })
-      } else if (code === 503) {
+      } else if (code >= 500) {
         setErrorMsg(data?.error || 'Face recognition service offline. Contact admin.')
         setStatus(STATUS.ERROR)
       } else {

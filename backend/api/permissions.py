@@ -29,8 +29,8 @@ class IsAdminOrTeacher(BasePermission):
 
 
 class IsAdminOrReadOnly(BasePermission):
-    """Admin can write, others can read."""
+    """Admin can write, anyone can read."""
     def has_permission(self, request, view):
         if request.method in ('GET', 'HEAD', 'OPTIONS'):
-            return request.user.is_authenticated
+            return True
         return request.user.is_authenticated and request.user.role == 'admin'

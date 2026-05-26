@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8080/api',
   headers: { 'Content-Type': 'application/json' },
 })
 
@@ -23,7 +23,7 @@ API.interceptors.response.use(
         const refresh = localStorage.getItem('refresh_token')
         if (refresh) {
           const { data } = await axios.post(
-            `${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/auth/refresh/`,
+            `${import.meta.env.VITE_API_URL || 'http://localhost:8080/api'}/auth/refresh/`,
             { refresh }
           )
           localStorage.setItem('access_token', data.access)
@@ -117,6 +117,7 @@ export const attendanceAPI = {
   stats: () => API.get('/stats/'),
   exportCSV: (params) => API.get('/reports/export-csv/', { params, responseType: 'blob' }),
   recognizeFace: (data) => API.post('/ai/recognize/', data),
+  healthCheck: () => API.get('/ai/health/'),
 }
 
 // ─── Users ───────────────────────────────────────────────────────────────────

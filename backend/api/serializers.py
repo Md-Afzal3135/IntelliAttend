@@ -142,6 +142,8 @@ class StudentListSerializer(serializers.ModelSerializer):
     email = serializers.CharField(source='user.email', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
     course_name = serializers.CharField(source='course.name', read_only=True)
+    branch = serializers.CharField(source='department.name', read_only=True)
+    branch_name = serializers.CharField(source='department.name', read_only=True)
     face_image_count = serializers.SerializerMethodField()
     attendance_percentage = serializers.SerializerMethodField()
 
@@ -149,7 +151,7 @@ class StudentListSerializer(serializers.ModelSerializer):
         model = Student
         fields = [
             'id', 'student_id', 'full_name', 'email',
-            'department_name', 'course_name', 'year', 'section',
+            'department_name', 'course_name', 'branch', 'branch_name', 'year', 'section',
             'roll_number', 'face_registered', 'face_image_count',
             'attendance_percentage', 'created_at'
         ]
@@ -170,6 +172,10 @@ class StudentDetailSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     department = DepartmentSerializer(read_only=True)
     course = CourseSerializer(read_only=True)
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    course_name = serializers.CharField(source='course.name', read_only=True)
+    branch = serializers.CharField(source='department.name', read_only=True)
+    branch_name = serializers.CharField(source='department.name', read_only=True)
     face_images = FaceImageSerializer(many=True, read_only=True)
 
     # Write-only fields for creation
@@ -184,8 +190,8 @@ class StudentDetailSerializer(serializers.ModelSerializer):
         model = Student
         fields = [
             'id', 'student_id', 'user', 'year', 'section', 'roll_number',
-            'department', 'course', 'face_registered', 'face_images',
-            'face_encodings', 'created_at',
+            'department', 'course', 'department_name', 'course_name', 'branch', 'branch_name',
+            'face_registered', 'face_images', 'face_encodings', 'created_at',
             # write-only
             'email', 'first_name', 'last_name', 'password', 'department_id', 'course_id'
         ]

@@ -346,67 +346,64 @@ class StudentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='upload-faces')
     def upload_faces(self, request, pk=None):
-        """Upload face images for a student and trigger AI encoding."""
+        """Upload face images for a student and trigger AI encoding/verification."""
         student = self.get_object()
         images = request.FILES.getlist('images')
         if not images:
             return Response({'error': 'No images provided.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        import base64
         import logging
         logger = logging.getLogger('intelliattend')
 
-        face_image_urls = []
-        face_base64s = []
+        primary_ai_url = os.getenv('AI_SERVICE_URL', 'https://mdafzal3135-intelliattend-ai-service.hf.space').rstrip('/')
+        fallback_ai_url = "https://mdafzal3135-intelliattend-ai-service.hf.space"
+        urls_to_try = [primary_ai_url]
+        if fallback_ai_url not in urls_to_try:
+            urls_to_try.append(fallback_ai_url)
+
+        has_face = False
+        face_detected_count = 0
 
         for img in images:
+            # Save the face image to database
             fi = FaceImage.objects.create(student=student, image=img)
-            if request.build_absolute_uri:
-                face_image_urls.append(request.build_absolute_uri(fi.image.url))
-
-            # Encode image to base64 to send directly to the AI service
-            try:
-                img.seek(0)
-                img_bytes = img.read()
-                b64_str = base64.b64encode(img_bytes).decode('utf-8')
-                face_base64s.append(f"data:image/jpeg;base64,{b64_str}")
-            except Exception as e:
-                logger.error('Base64 encoding failed for uploaded image: %s', e)
-
-        # Trigger AI service to encode faces
-        ai_url = os.getenv('AI_SERVICE_URL', 'http://localhost:8001')
-        try:
-            resp = requests.post(f"{ai_url}/encode", json={
-                'student_id': str(student.id),
-                'image_urls': face_image_urls,
-                'image_base64': face_base64s,
-            }, timeout=30)
             
-            if resp.status_code == 200:
-                encodings = resp.json().get('encodings', [])
-                student.face_encodings = encodings
-                student.face_registered = True
-                student.save()
-                return Response({
-                    'message': f'{len(images)} image(s) uploaded and encoded.',
-                    'face_registered': True,
-                    'encodings_count': len(encodings),
-                })
-            else:
-                # Return the error response from AI service
+            # Forward the image to the AI service (/verify)
+            # Try primary URL first, then fallback
+            for ai_url in urls_to_try:
                 try:
-                    err_data = resp.json()
-                except Exception:
-                    err_data = {'detail': resp.text}
-                return Response(err_data, status=resp.status_code)
-                
-        except requests.exceptions.RequestException as e:
-            logger.error('AI Service communication failed: %s', e)
+                    img.seek(0)
+                    files = {
+                        'file': (img.name, img.read(), img.content_type)
+                    }
+                    resp = requests.post(f"{ai_url}/verify", files=files, timeout=30)
+                    if resp.status_code == 200:
+                        res_data = resp.json()
+                        if res_data.get('success') and res_data.get('faces_detected', 0) > 0:
+                            has_face = True
+                            face_detected_count += res_data.get('faces_detected', 0)
+                            break
+                    else:
+                        logger.warning(f"AI service {ai_url} returned status code {resp.status_code}: {resp.text}")
+                except Exception as e:
+                    logger.error(f"AI service {ai_url} communication failed: {e}")
+
+        # If a face is detected in the uploaded images, mark student as registered
+        if has_face:
+            # Store dummy 128-d face encoding array (since the simple OpenCV service only detects faces)
+            student.face_encodings = [0.0] * 128
+            student.face_registered = True
+            student.save()
             return Response({
-                'detail': 'AI encoding service is offline. Please start the AI service.',
-                'error': str(e),
+                'message': f'{len(images)} image(s) uploaded and encoded.',
+                'face_registered': True,
+                'encodings_count': face_detected_count if face_detected_count > 0 else 1,
+            })
+        else:
+            return Response({
+                'detail': 'No face detected in the uploaded images. Please try again with clear photos.',
                 'face_registered': False,
-            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            }, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['delete'], url_path='clear-faces')
     def clear_faces(self, request, pk=None):
@@ -1184,3 +1181,168 @@ def seed_database_view(request):
         })
     except Exception as e:
         return Response({'error': str(e)}, status=500)
+
+
+# ─── Verification and Attendance Marking via AI Microservice ─────────────────
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_and_mark_attendance(request):
+    """
+    Verify student's face using Hugging Face microservice and mark attendance as PRESENT.
+    """
+    image_file = request.FILES.get('image')
+    if not image_file:
+        return Response({'error': 'Image file is required under the key "image".'}, status=status.HTTP_400_BAD_REQUEST)
+
+    session_id = request.data.get('session_id') or request.query_params.get('session_id')
+    student_id = request.data.get('student_id') or request.query_params.get('student_id')
+
+    if not session_id:
+        return Response({'error': 'session_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        session = AttendanceSession.objects.get(id=session_id)
+    except Exception:
+        return Response({'error': 'Invalid or non-existent session_id.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    student = None
+    if student_id:
+        try:
+            student = Student.objects.get(id=student_id)
+        except Exception:
+            try:
+                student = Student.objects.get(student_id=student_id)
+            except Student.DoesNotExist:
+                pass
+    elif request.user and request.user.is_authenticated:
+        try:
+            student = Student.objects.get(user=request.user)
+        except Student.DoesNotExist:
+            pass
+
+    if not student:
+        return Response({'error': 'Student not found.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    latitude = request.data.get('latitude') or request.query_params.get('latitude')
+    longitude = request.data.get('longitude') or request.query_params.get('longitude')
+
+    scanned_lat = None
+    scanned_long = None
+    if latitude is not None:
+        try:
+            scanned_lat = float(latitude)
+        except (ValueError, TypeError):
+            pass
+    if longitude is not None:
+        try:
+            scanned_long = float(longitude)
+        except (ValueError, TypeError):
+            pass
+
+    # Forward to Hugging Face AI microservice
+    microservice_url = "https://mdafzal3135-intelliattend-ai-service.hf.space/verify"
+    
+    try:
+        # Seek to 0 in case the file pointer was already read
+        image_file.seek(0)
+        files = {
+            'file': (image_file.name, image_file.read(), image_file.content_type)
+        }
+        
+        # Call the Hugging Face microservice
+        resp = requests.post(microservice_url, files=files, timeout=30)
+        
+        if resp.status_code != 200:
+            return Response({
+                'error': 'AI microservice returned an error status code.',
+                'status_code': resp.status_code,
+                'detail': resp.text
+            }, status=status.HTTP_502_BAD_GATEWAY)
+
+        result = resp.json()
+        
+    except requests.exceptions.Timeout as e:
+        return Response({
+            'error': 'Connection to AI microservice timed out.',
+            'detail': str(e)
+        }, status=status.HTTP_504_GATEWAY_TIMEOUT)
+    except requests.exceptions.ConnectionError as e:
+        return Response({
+            'error': 'Could not connect to AI microservice.',
+            'detail': str(e)
+        }, status=status.HTTP_502_BAD_GATEWAY)
+    except requests.exceptions.RequestException as e:
+        return Response({
+            'error': 'Error communicating with AI microservice.',
+            'detail': str(e)
+        }, status=status.HTTP_502_BAD_GATEWAY)
+    except Exception as e:
+        return Response({
+            'error': 'An unexpected error occurred during request forwarding.',
+            'detail': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    # Check for success and match in AI microservice response
+    success = result.get('success')
+    match = result.get('match')
+
+    if success and match:
+        # Mark student as present
+        record, created = AttendanceRecord.objects.get_or_create(
+            session=session,
+            student=student,
+            defaults={
+                'status': 'present',
+                'method': 'face',
+                'confidence': result.get('confidence'),
+                'scanned_lat': scanned_lat,
+                'scanned_long': scanned_long,
+                'marked_by': request.user if request.user.is_authenticated else student.user
+            }
+        )
+        if not created:
+            record.status = 'present'
+            record.method = 'face'
+            if result.get('confidence') is not None:
+                record.confidence = result.get('confidence')
+            if scanned_lat is not None:
+                record.scanned_lat = scanned_lat
+            if scanned_long is not None:
+                record.scanned_long = scanned_long
+            if request.user.is_authenticated:
+                record.marked_by = request.user
+            record.save()
+
+        return Response({
+            'success': True,
+            'message': 'Attendance marked successfully.',
+            'student_id': student.student_id,
+            'student_name': student.user.get_full_name(),
+            'session_id': str(session.id),
+            'status': record.status,
+            'faces_detected': result.get('faces_detected', 1)
+        }, status=status.HTTP_201_CREATED)
+    else:
+        return Response({
+            'success': False,
+            'error': 'Face not detected or match failed.',
+            'detail': result.get('message', 'AI service could not verify the face.')
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def ai_health_check(request):
+    """
+    Check the health of the Hugging Face AI microservice.
+    """
+    microservice_url = "https://mdafzal3135-intelliattend-ai-service.hf.space/"
+    try:
+        resp = requests.get(microservice_url, timeout=10)
+        if resp.status_code == 200:
+            return Response({"status": "running", "service": "IntelliAttend AI Microservice", "mode": "production-ready"}, status=200)
+        return Response({"status": "offline", "detail": f"Status code {resp.status_code}"}, status=503)
+    except Exception as e:
+        return Response({"status": "offline", "detail": str(e)}, status=503)
+

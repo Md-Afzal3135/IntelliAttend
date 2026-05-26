@@ -289,8 +289,8 @@ export default function StudentManagement() {
                     <p className="text-slate-500 text-xs">{student.roll_number}</p>
                   </td>
                   <td>
-                    <p className="text-sm">{student.department_name || '—'}</p>
-                    <p className="text-slate-500 text-xs">{student.course_name || '—'}</p>
+                    <p className="text-sm">{student.department_name || student.branch || student.department?.name || '—'}</p>
+                    <p className="text-slate-500 text-xs">{student.course_name || student.course?.name || '—'}</p>
                   </td>
                   <td>Year {student.year}{student.section && ` - ${student.section}`}</td>
                   <td>

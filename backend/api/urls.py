@@ -14,7 +14,8 @@ from .views import (
     # New RBAC + Geofencing views
     CollegeConfigView, TeacherManagementViewSet,
     student_self_mark, active_sessions_for_student,
-    seed_database_view,
+    seed_database_view, verify_and_mark_attendance,
+    ai_health_check,
 )
 
 router = DefaultRouter()
@@ -47,6 +48,7 @@ urlpatterns = [
 
     # AI
     path('ai/recognize/', recognize_face, name='recognize-face'),
+    path('ai/health/', ai_health_check, name='ai-health-check'),
 
     # Admin — College Config & Teacher Management
     path('admin/college-config/', CollegeConfigView.as_view(), name='college-config'),
@@ -54,6 +56,7 @@ urlpatterns = [
     # Student — GPS + Face attendance
     path('ai/student-mark/', student_self_mark, name='student-self-mark'),
     path('attendance/active-sessions/', active_sessions_for_student, name='active-sessions'),
+    path('attendance/verify/', verify_and_mark_attendance, name='verify_attendance'),
 
     # Seed Production Database
     path('seed/', seed_database_view, name='seed-database'),

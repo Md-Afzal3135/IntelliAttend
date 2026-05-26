@@ -1,20 +1,19 @@
-FROM python:3.11-slim
+FROM python:3.9-slim
 
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     libgl1 \
+    libglx-mesa0 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+WORKDIR /code
 
-COPY requirements.txt .
+COPY ./requirements.txt /code/requirements.txt
 
-# Upgrade pip and run with fallback configuration to bypass lockouts
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --prefer-binary face-recognition opencv-python-headless
+RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
 COPY . .
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]

@@ -32,8 +32,11 @@ export default function AttendancePage() {
   useEffect(() => {
     // Subjects — backend already filters by teacher role, admin sees all
     subjectsAPI.list().then(r => setSubjects(r.data.results || r.data)).catch(() => {})
-    // Check AI service health via backend proxy
-    attendanceAPI.healthCheck().then(r => setAiAvailable(true)).catch(() => setAiAvailable(true))
+    // Health check routed through Django (/api/ai/health/) to avoid CORS.
+    // We optimistically set online=true and only flip if Django explicitly says offline.
+    attendanceAPI.healthCheck()
+      .then(r => setAiAvailable(r.data?.status === 'running' || r.status === 200))
+      .catch(() => setAiAvailable(true))   // network error → assume online, let actual call reveal the truth
   }, [])
 
   // ─── Load enrolled students when subject changes ───────────────────────────

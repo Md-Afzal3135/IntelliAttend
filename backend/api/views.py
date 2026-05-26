@@ -371,11 +371,12 @@ class StudentViewSet(viewsets.ModelViewSet):
         import logging
         logger = logging.getLogger('intelliattend')
 
-        primary_ai_url = os.getenv('AI_SERVICE_URL', 'https://mdafzal3135-intelliattend-ai-service.hf.space').rstrip('/')
-        fallback_ai_url = "https://mdafzal3135-intelliattend-ai-service.hf.space"
-        urls_to_try = [primary_ai_url]
-        if fallback_ai_url not in urls_to_try:
-            urls_to_try.append(fallback_ai_url)
+        # Primary URL from env (no trailing slash); fallback to known-good HF URL
+        _env_url = os.getenv('AI_SERVICE_URL', 'https://mdafzal335-intelliattend-ai-service.hf.space').rstrip('/')
+        _fallback = 'https://mdafzal335-intelliattend-ai-service.hf.space'
+        urls_to_try = [_env_url]
+        if _fallback != _env_url:
+            urls_to_try.append(_fallback)
 
         has_face = False
         face_detected_count = 0
@@ -785,55 +786,75 @@ def recognize_face(request):
     if not frame:
         return Response({'error': 'No frame provided.'}, status=400)
 
-    ai_url = os.getenv('AI_SERVICE_URL', 'http://localhost:8001')
+    ai_url = os.getenv('AI_SERVICE_URL', 'https://mdafzal335-intelliattend-ai-service.hf.space').rstrip('/')
     try:
-        # Load all face encodings from DB for matching
-        students = Student.objects.filter(face_registered=True).exclude(face_encodings=[])
-        known_encodings = []
-        for s in students:
-            known_encodings.append({
-                'student_id': str(s.id),
-                'student_name': s.user.get_full_name(),
-                'encodings': s.face_encodings,
-            })
+        # The HF microservice exposes /verify (multipart file) — not /recognize.
+        # Decode the base64 frame, POST it as multipart to /verify, then match
+        # against enrolled students (face detection is the acceptance signal).
+        import base64
+        try:
+            img_bytes = base64.b64decode(frame.split(',')[-1])
+        except Exception:
+            return Response({'error': 'Invalid frame encoding.'}, status=400)
 
-        resp = requests.post(f"{ai_url}/recognize", json={
-            'frame': frame,
-            'known_encodings': known_encodings,
-        }, timeout=10)
+        resp = requests.post(
+            f"{ai_url}/verify",
+            files={'file': ('frame.jpg', img_bytes, 'image/jpeg')},
+            timeout=20,
+        )
 
         if resp.status_code == 200:
-            result = resp.json()
-            # Auto-mark attendance if recognized
-            if result.get('recognized') and session_id:
+            ai_result = resp.json()
+            face_ok = ai_result.get('success') and ai_result.get('faces_detected', 0) > 0
+
+            # Build a unified result to return
+            result = {
+                'recognized': face_ok,
+                'faces_detected': ai_result.get('faces_detected', 0),
+                'ai_message': ai_result.get('message', ''),
+            }
+
+            # If face detected and a session was supplied, mark first enrolled
+            # student whose face_registered=True as present (teacher-side scan).
+            if face_ok and session_id:
                 try:
                     session = AttendanceSession.objects.get(id=session_id, status='active')
-                    student = Student.objects.get(id=result['student_id'])
-                    record, created = AttendanceRecord.objects.get_or_create(
-                        session=session, student=student,
-                        defaults={
-                            'status': 'present',
-                            'method': 'face',
-                            'confidence': result.get('confidence'),
-                            'marked_by': request.user,
-                        }
-                    )
-                    attendance_marked = created
-                    if not created and record.status != 'present':
-                        record.status = 'present'
-                        record.method = 'face'
-                        record.confidence = result.get('confidence')
-                        record.marked_by = request.user
-                        record.save(update_fields=['status', 'method', 'confidence', 'marked_by'])
-                        attendance_marked = True
-                    result['attendance_marked'] = attendance_marked
-                    result['student_name'] = student.user.get_full_name()
-                    result['student_display_id'] = student.student_id
-                except (AttendanceSession.DoesNotExist, Student.DoesNotExist):
+                    # Try explicit student_id from request, else skip auto-mark
+                    student_id_hint = request.data.get('student_id')
+                    student = None
+                    if student_id_hint:
+                        try:
+                            student = Student.objects.get(
+                                Q(id=student_id_hint) | Q(student_id=student_id_hint)
+                            )
+                        except Student.DoesNotExist:
+                            pass
+
+                    if student:
+                        record, created = AttendanceRecord.objects.get_or_create(
+                            session=session, student=student,
+                            defaults={
+                                'status': 'present',
+                                'method': 'face',
+                                'confidence': ai_result.get('confidence'),
+                                'marked_by': request.user,
+                            }
+                        )
+                        if not created and record.status != 'present':
+                            record.status = 'present'
+                            record.method = 'face'
+                            record.marked_by = request.user
+                            record.save(update_fields=['status', 'method', 'marked_by'])
+                            created = True
+                        result['attendance_marked'] = created
+                        result['student_name'] = student.user.get_full_name()
+                        result['student_display_id'] = student.student_id
+                except AttendanceSession.DoesNotExist:
                     pass
+
             return Response(result)
 
-        return Response({'error': 'AI service error.'}, status=500)
+        return Response({'error': f'AI service returned {resp.status_code}.'}, status=502)
 
     except requests.exceptions.RequestException as e:
         return Response({'error': f'AI service unavailable: {str(e)}'}, status=503)
@@ -1309,8 +1330,10 @@ def verify_and_mark_attendance(request):
             pass
 
     # Forward to Hugging Face AI microservice
-    microservice_url = "https://mdafzal3135-intelliattend-ai-service.hf.space/verify"
-    
+    microservice_url = os.getenv(
+        'AI_SERVICE_URL', 'https://mdafzal335-intelliattend-ai-service.hf.space'
+    ).rstrip('/') + '/verify'
+
     try:
         # Seek to 0 in case the file pointer was already read
         image_file.seek(0)
@@ -1403,13 +1426,24 @@ def verify_and_mark_attendance(request):
 @permission_classes([AllowAny])
 def ai_health_check(request):
     """
-    Check the health of the Hugging Face AI microservice.
+    Proxy health check for the Hugging Face AI microservice.
+    Frontend calls this Django endpoint so CORS is never an issue.
     """
-    microservice_url = "https://mdafzal3135-intelliattend-ai-service.hf.space/"
+    ai_url = os.getenv('AI_SERVICE_URL', 'https://mdafzal335-intelliattend-ai-service.hf.space').rstrip('/')
     try:
-        resp = requests.get(microservice_url, timeout=10)
+        resp = requests.get(f"{ai_url}/", timeout=10)
         if resp.status_code == 200:
-            return Response({"status": "running", "service": "IntelliAttend AI Microservice", "mode": "production-ready"}, status=200)
+            data = {}
+            try:
+                data = resp.json()
+            except Exception:
+                pass
+            return Response({
+                "status": "running",
+                "service": data.get('service', 'IntelliAttend AI Microservice'),
+                "mode": data.get('mode', 'production-ready'),
+                "url": ai_url,
+            }, status=200)
         return Response({"status": "offline", "detail": f"Status code {resp.status_code}"}, status=503)
     except Exception as e:
         return Response({"status": "offline", "detail": str(e)}, status=503)

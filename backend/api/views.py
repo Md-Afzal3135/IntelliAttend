@@ -364,7 +364,12 @@ class StudentViewSet(viewsets.ModelViewSet):
     def upload_faces(self, request, pk=None):
         """Upload face images for a student and trigger AI encoding/verification."""
         student = self.get_object()
-        images = request.FILES.getlist('images')
+        single_image = request.FILES.get('image')
+        if single_image:
+            images = [single_image]
+        else:
+            images = request.FILES.getlist('images')
+
         if not images:
             return Response({'error': 'No images provided.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -385,7 +390,7 @@ class StudentViewSet(viewsets.ModelViewSet):
             # Save the face image to database
             fi = FaceImage.objects.create(student=student, image=img)
             
-            # Forward the image to the AI service (/verify)
+            # Forward the image to the AI service (/recognize)
             # Try primary URL first, then fallback
             for ai_url in urls_to_try:
                 try:
@@ -393,10 +398,9 @@ class StudentViewSet(viewsets.ModelViewSet):
                     img_bytes = img.read()
                     import io as _io
                     file_obj = _io.BytesIO(img_bytes)        # wrap bytes so requests can .seek()/.read()
-                    files = {
-                        'file': (img.name, file_obj, img.content_type or 'image/jpeg')
-                    }
-                    resp = requests.post(f"{ai_url}/verify", files=files, timeout=30)
+                    file_obj.name = img.name                 # set name attribute so requests can read it correctly
+                    
+                    resp = requests.post(f"{ai_url}/recognize", files={'image': file_obj}, timeout=30)
                     if resp.status_code == 200:
                         res_data = resp.json()
                         if res_data.get('success') and res_data.get('faces_detected', 0) > 0:
@@ -780,30 +784,33 @@ def export_attendance_csv(request):
 @permission_classes([IsAdminOrTeacher])
 def recognize_face(request):
     """
-    Proxy to AI service: send a frame and get recognized student ID back.
-    Expects: { frame: base64_jpeg, session_id: uuid }
+    Proxy to AI service: send a frame or image file and get recognized student ID back.
     """
+    uploaded_file = request.FILES.get('image')
     frame = request.data.get('frame')
     session_id = request.data.get('session_id')
 
-    if not frame:
-        return Response({'error': 'No frame provided.'}, status=400)
-
-    ai_url = os.getenv('AI_SERVICE_URL', 'https://mdafzal335-intelliattend-ai-service.hf.space').rstrip('/')
-    try:
-        # The HF microservice exposes /verify (multipart file) — not /recognize.
-        # Decode the base64 frame and wrap in BytesIO so requests can .seek()/.read() it.
+    if not uploaded_file and frame:
         import base64
         import io as _io
         try:
             img_bytes = base64.b64decode(frame.split(',')[-1])
+            uploaded_file = _io.BytesIO(img_bytes)
+            uploaded_file.name = 'frame.jpg'
         except Exception:
             return Response({'error': 'Invalid frame encoding.'}, status=400)
 
-        file_obj = _io.BytesIO(img_bytes)   # file-like object: supports .seek() and .read()
+    if not uploaded_file:
+        return Response({'error': 'No image file or frame provided.'}, status=400)
+
+    ai_url = os.getenv('AI_SERVICE_URL', 'https://mdafzal335-intelliattend-ai-service.hf.space').rstrip('/')
+    try:
+        # Seek to 0 to ensure we read from the beginning
+        uploaded_file.seek(0)
+        
         resp = requests.post(
-            f"{ai_url}/verify",
-            files={'file': ('frame.jpg', file_obj, 'image/jpeg')},
+            f"{ai_url}/recognize",
+            files={'image': uploaded_file},
             timeout=20,
         )
 
@@ -1336,7 +1343,7 @@ def verify_and_mark_attendance(request):
     # Forward to Hugging Face AI microservice
     microservice_url = os.getenv(
         'AI_SERVICE_URL', 'https://mdafzal335-intelliattend-ai-service.hf.space'
-    ).rstrip('/') + '/verify'
+    ).rstrip('/') + '/recognize'
 
     try:
         import io as _io
@@ -1344,12 +1351,10 @@ def verify_and_mark_attendance(request):
         image_file.seek(0)
         raw = image_file.read()                           # read into bytes
         file_obj = _io.BytesIO(raw)                       # wrap in BytesIO for .seek()/.read() support
-        files = {
-            'file': (image_file.name, file_obj, image_file.content_type or 'image/jpeg')
-        }
+        file_obj.name = image_file.name                   # assign name so requests knows how to set filename
 
         # Call the Hugging Face microservice
-        resp = requests.post(microservice_url, files=files, timeout=30)
+        resp = requests.post(microservice_url, files={'image': file_obj}, timeout=30)
         
         if resp.status_code != 200:
             return Response({

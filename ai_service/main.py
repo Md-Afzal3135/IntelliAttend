@@ -28,10 +28,17 @@ def home():
 
 @app.post("/verify")
 async def verify_attendance(file: UploadFile = File(...)):
+    return await process_face_image(file)
+
+@app.post("/recognize")
+async def recognize_face(image: UploadFile = File(...)):
+    return await process_face_image(image)
+
+async def process_face_image(file: UploadFile):
     try:
         request_object_content = await file.read()
-        image = Image.open(io.BytesIO(request_object_content)).convert('RGB')
-        open_cv_image = np.array(image)
+        image_pil = Image.open(io.BytesIO(request_object_content)).convert('RGB')
+        open_cv_image = np.array(image_pil)
         open_cv_image = open_cv_image[:, :, ::-1].copy()
         
         gray = cv2.cvtColor(open_cv_image, cv2.COLOR_BGR2GRAY)

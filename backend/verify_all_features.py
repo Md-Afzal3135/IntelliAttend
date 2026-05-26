@@ -15,7 +15,7 @@ django.setup()
 
 from api.models import User, Student, Department, Course, Subject, AttendanceSession, AttendanceRecord, CollegeConfig
 
-BASE_URL = "http://127.0.0.1:8000/api"
+BASE_URL = "http://127.0.0.1:8080/api"
 
 # Helper for printing colored logs
 def log_info(msg):

@@ -362,16 +362,14 @@ class StudentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='upload-faces')
     def upload_faces(self, request, pk=None):
-        """Upload face images for a student and trigger AI encoding/verification."""
+        """Upload face image for a student and trigger AI encoding/verification."""
         student = self.get_object()
-        single_image = request.FILES.get('image')
-        if single_image:
-            images = [single_image]
-        else:
-            images = request.FILES.getlist('images')
+        uploaded_file = request.FILES.get('image')
+        if not uploaded_file:
+            uploaded_file = request.FILES.get('images')
 
-        if not images:
-            return Response({'error': 'No images provided.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not uploaded_file:
+            return Response({'error': 'No image provided.'}, status=status.HTTP_400_BAD_REQUEST)
 
         import logging
         logger = logging.getLogger('intelliattend')
@@ -386,46 +384,45 @@ class StudentViewSet(viewsets.ModelViewSet):
         has_face = False
         face_detected_count = 0
 
-        for img in images:
-            # Save the face image to database
-            fi = FaceImage.objects.create(student=student, image=img)
-            
-            # Forward the image to the AI service (/recognize)
-            # Try primary URL first, then fallback
-            for ai_url in urls_to_try:
-                try:
-                    img.seek(0)                              # reset pointer before reading
-                    img_bytes = img.read()
-                    import io as _io
-                    file_obj = _io.BytesIO(img_bytes)        # wrap bytes so requests can .seek()/.read()
-                    file_obj.name = img.name                 # set name attribute so requests can read it correctly
-                    
-                    resp = requests.post(f"{ai_url}/recognize", files={'image': file_obj}, timeout=30)
-                    if resp.status_code == 200:
-                        res_data = resp.json()
-                        if res_data.get('success') and res_data.get('faces_detected', 0) > 0:
-                            has_face = True
-                            face_detected_count += res_data.get('faces_detected', 0)
-                            break
-                    else:
-                        logger.warning(f"AI service {ai_url} returned status code {resp.status_code}: {resp.text}")
-                except Exception as e:
-                    logger.error(f"AI service {ai_url} communication failed: {e}")
+        # Save the face image to database
+        fi = FaceImage.objects.create(student=student, image=uploaded_file)
+        
+        # Forward the image to the AI service (/recognize)
+        # Try primary URL first, then fallback
+        for ai_url in urls_to_try:
+            try:
+                uploaded_file.seek(0)                              # reset pointer before reading
+                img_bytes = uploaded_file.read()
+                import io as _io
+                file_obj = _io.BytesIO(img_bytes)        # wrap bytes so requests can .seek()/.read()
+                file_obj.name = uploaded_file.name       # set name attribute so requests can read it correctly
+                
+                resp = requests.post(f"{ai_url}/recognize", files={'image': file_obj}, timeout=30)
+                if resp.status_code == 200:
+                    res_data = resp.json()
+                    if res_data.get('success') and res_data.get('faces_detected', 0) > 0:
+                        has_face = True
+                        face_detected_count = res_data.get('faces_detected', 0)
+                        break
+                else:
+                    logger.warning(f"AI service {ai_url} returned status code {resp.status_code}: {resp.text}")
+            except Exception as e:
+                logger.error(f"AI service {ai_url} communication failed: {e}")
 
-        # If a face is detected in the uploaded images, mark student as registered
+        # If a face is detected in the uploaded image, mark student as registered
         if has_face:
             # Store dummy 128-d face encoding array (since the simple OpenCV service only detects faces)
             student.face_encodings = [0.0] * 128
             student.face_registered = True
             student.save()
             return Response({
-                'message': f'{len(images)} image(s) uploaded and encoded.',
+                'message': 'Image uploaded and encoded.',
                 'face_registered': True,
                 'encodings_count': face_detected_count if face_detected_count > 0 else 1,
             })
         else:
             return Response({
-                'detail': 'No face detected in the uploaded images. Please try again with clear photos.',
+                'detail': 'No face detected in the uploaded image. Please try again with clear photos.',
                 'face_registered': False,
             }, status=status.HTTP_400_BAD_REQUEST)
 

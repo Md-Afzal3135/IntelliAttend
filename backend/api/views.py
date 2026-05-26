@@ -389,9 +389,12 @@ class StudentViewSet(viewsets.ModelViewSet):
             # Try primary URL first, then fallback
             for ai_url in urls_to_try:
                 try:
-                    img.seek(0)
+                    img.seek(0)                              # reset pointer before reading
+                    img_bytes = img.read()
+                    import io as _io
+                    file_obj = _io.BytesIO(img_bytes)        # wrap bytes so requests can .seek()/.read()
                     files = {
-                        'file': (img.name, img.read(), img.content_type)
+                        'file': (img.name, file_obj, img.content_type or 'image/jpeg')
                     }
                     resp = requests.post(f"{ai_url}/verify", files=files, timeout=30)
                     if resp.status_code == 200:
@@ -789,17 +792,18 @@ def recognize_face(request):
     ai_url = os.getenv('AI_SERVICE_URL', 'https://mdafzal335-intelliattend-ai-service.hf.space').rstrip('/')
     try:
         # The HF microservice exposes /verify (multipart file) — not /recognize.
-        # Decode the base64 frame, POST it as multipart to /verify, then match
-        # against enrolled students (face detection is the acceptance signal).
+        # Decode the base64 frame and wrap in BytesIO so requests can .seek()/.read() it.
         import base64
+        import io as _io
         try:
             img_bytes = base64.b64decode(frame.split(',')[-1])
         except Exception:
             return Response({'error': 'Invalid frame encoding.'}, status=400)
 
+        file_obj = _io.BytesIO(img_bytes)   # file-like object: supports .seek() and .read()
         resp = requests.post(
             f"{ai_url}/verify",
-            files={'file': ('frame.jpg', img_bytes, 'image/jpeg')},
+            files={'file': ('frame.jpg', file_obj, 'image/jpeg')},
             timeout=20,
         )
 
@@ -1335,12 +1339,15 @@ def verify_and_mark_attendance(request):
     ).rstrip('/') + '/verify'
 
     try:
-        # Seek to 0 in case the file pointer was already read
+        import io as _io
+        # Seek to 0 in case the file pointer was already advanced
         image_file.seek(0)
+        raw = image_file.read()                           # read into bytes
+        file_obj = _io.BytesIO(raw)                       # wrap in BytesIO for .seek()/.read() support
         files = {
-            'file': (image_file.name, image_file.read(), image_file.content_type)
+            'file': (image_file.name, file_obj, image_file.content_type or 'image/jpeg')
         }
-        
+
         # Call the Hugging Face microservice
         resp = requests.post(microservice_url, files=files, timeout=30)
         

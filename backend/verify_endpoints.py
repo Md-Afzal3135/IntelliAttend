@@ -4,7 +4,7 @@ import time
 import sys
 from datetime import date
 
-BASE_URL = "http://localhost:8000/api"
+BASE_URL = "http://127.0.0.1:8000/api"
 
 # Helper for printing colored logs
 def log_info(msg):

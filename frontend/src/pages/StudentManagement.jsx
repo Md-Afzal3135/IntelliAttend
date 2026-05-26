@@ -106,16 +106,101 @@ function AddStudentModal({ departments, courses, onClose, onSuccess }) {
   )
 }
 
-function FaceUploadModal({ student, onClose, onSuccess }) {
-  const [files, setFiles] = useState([])
-  const [loading, setLoading] = useState(false)
-  const fileRef = useRef()
+import Webcam from 'react-webcam'
+import * as faceLandmarksDetection from '@tensorflow-models/face-landmarks-detection'
+import '@tensorflow/tfjs-backend-webgl'
 
-  const upload = async () => {
-    if (!files.length) { toast.error('Select at least one image'); return }
+function dataURLtoFile(dataurl, filename) {
+  const arr = dataurl.split(',')
+  const mime = arr[0].match(/:(.*?);/)[1]
+  const bstr = atob(arr[1])
+  let n = bstr.length
+  const u8arr = new Uint8Array(n)
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n)
+  }
+  return new File([u8arr], filename, { type: mime })
+}
+
+function FaceUploadModal({ student, onClose, onSuccess }) {
+  const webcamRef = useRef(null)
+  const [model, setModel] = useState(null)
+  const [movements, setMovements] = useState({ left: false, right: false, up: false, down: false })
+  const [canCapture, setCanCapture] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [modelLoading, setModelLoading] = useState(true)
+
+  useEffect(() => {
+    async function initModel() {
+      try {
+        const detector = await faceLandmarksDetection.createDetector(
+          faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
+          { runtime: 'tfjs', refineLandmarks: true }
+        )
+        setModel(detector)
+      } catch (err) {
+        console.error('Model load error:', err)
+        toast.error('Failed to load AI model.')
+      } finally {
+        setModelLoading(false)
+      }
+    }
+    initModel()
+  }, [])
+
+  useEffect(() => {
+    if (movements.left && movements.right && movements.up && movements.down) {
+      setCanCapture(true)
+    }
+  }, [movements])
+
+  useEffect(() => {
+    let animationFrame;
+    async function detectPose() {
+      if (model && webcamRef.current && webcamRef.current.video && webcamRef.current.video.readyState === 4) {
+        const video = webcamRef.current.video;
+        try {
+          const faces = await model.estimateFaces(video);
+          
+          if (faces.length > 0) {
+            const keypoints = faces[0].keypoints;
+            // Simple heuristic based on relative depths (z-axis) and positioning
+            const nose = keypoints[1];
+            const leftJaw = keypoints[234];
+            const rightJaw = keypoints[454];
+            const topForehead = keypoints[10];
+            const chin = keypoints[152];
+
+            // YAW (Left / Right) -> Comparing z-depth of jawlines relative to nose
+            if (leftJaw.z > nose.z + 15) setMovements(prev => ({ ...prev, right: true }));
+            if (rightJaw.z > nose.z + 15) setMovements(prev => ({ ...prev, left: true }));
+            
+            // PITCH (Up / Down) -> Comparing y-axis distances
+            const faceHeight = Math.abs(topForehead.y - chin.y);
+            const noseToChin = Math.abs(nose.y - chin.y);
+            const pitchRatio = noseToChin / faceHeight;
+
+            if (pitchRatio > 0.45) setMovements(prev => ({ ...prev, down: true }));
+            if (pitchRatio < 0.25) setMovements(prev => ({ ...prev, up: true }));
+          }
+        } catch(e) {}
+      }
+      animationFrame = requestAnimationFrame(detectPose);
+    }
+    if (model) detectPose();
+    return () => cancelAnimationFrame(animationFrame);
+  }, [model]);
+
+  const captureAndUpload = async () => {
+    if (!webcamRef.current) return
+    const imageSrc = webcamRef.current.getScreenshot()
+    if (!imageSrc) { toast.error('Failed to capture frame'); return }
+    
     setLoading(true)
+    const file = dataURLtoFile(imageSrc, 'face.jpg')
     const fd = new FormData()
-    files.forEach(f => fd.append('images', f))
+    fd.append('image', file)
+    
     try {
       const { data } = await studentsAPI.uploadFaces(student.id, fd)
       if (data.face_registered) {
@@ -123,7 +208,7 @@ function FaceUploadModal({ student, onClose, onSuccess }) {
         onSuccess()
         onClose()
       } else {
-        toast.error(data.message)
+        toast.error(data.message || 'Face not detected')
       }
     } catch (err) {
       const detail = err.response?.data?.detail || err.response?.data?.error || 'Upload failed'
@@ -136,39 +221,45 @@ function FaceUploadModal({ student, onClose, onSuccess }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="glass-card w-full max-w-md p-6">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="section-title">Upload Face Images</h2>
+            <h2 className="section-title">Admin Liveness Registration</h2>
             <p className="text-muted text-xs mt-0.5">{student.full_name} · {student.student_id}</p>
           </div>
           <button onClick={onClose} className="btn-ghost p-2"><X className="w-4 h-4" /></button>
         </div>
 
-        <div
-          onClick={() => fileRef.current?.click()}
-          className="border-2 border-dashed border-primary-500/30 hover:border-primary-500/60 rounded-xl p-8 text-center cursor-pointer transition-colors"
-        >
-          <Camera className="w-10 h-10 text-primary-400/50 mx-auto mb-3" />
-          <p className="text-slate-400 text-sm">Click to select face images</p>
-          <p className="text-slate-600 text-xs mt-1">JPG, PNG up to 10MB. Multiple images recommended.</p>
-          <input ref={fileRef} type="file" accept="image/*" multiple onChange={e => setFiles([...e.target.files])} className="hidden" />
+        <div className="relative rounded-xl overflow-hidden border-2 border-primary-500/30 mb-4 bg-black flex items-center justify-center min-h-[200px]">
+          {modelLoading ? (
+            <div className="text-center text-primary-400 text-sm flex flex-col items-center">
+              <div className="w-5 h-5 border-2 border-primary-400 border-t-transparent rounded-full animate-spin mb-2" />
+              Loading AI Models...
+            </div>
+          ) : (
+            <Webcam 
+              ref={webcamRef}
+              screenshotFormat="image/jpeg"
+              videoConstraints={{ facingMode: "user" }}
+              className="w-full transform scale-x-[-1]"
+            />
+          )}
         </div>
 
-        {files.length > 0 && (
-          <div className="mt-3 space-y-1">
-            {files.map((f, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs text-slate-400 bg-surface-700/50 px-3 py-2 rounded-lg">
-                <CheckCircle className="w-3 h-3 text-emerald-400" />
-                {f.name}
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-2 gap-3 w-full text-center text-xs font-semibold mb-5">
+          <div className={`p-2 rounded transition-colors ${movements.left ? 'bg-emerald-500 text-white shadow-lg' : 'bg-surface-700 text-slate-400'}`}>Look Left</div>
+          <div className={`p-2 rounded transition-colors ${movements.right ? 'bg-emerald-500 text-white shadow-lg' : 'bg-surface-700 text-slate-400'}`}>Look Right</div>
+          <div className={`p-2 rounded transition-colors ${movements.up ? 'bg-emerald-500 text-white shadow-lg' : 'bg-surface-700 text-slate-400'}`}>Look Up</div>
+          <div className={`p-2 rounded transition-colors ${movements.down ? 'bg-emerald-500 text-white shadow-lg' : 'bg-surface-700 text-slate-400'}`}>Look Down</div>
+        </div>
 
-        <div className="flex gap-3 mt-4">
+        <div className="flex gap-3">
           <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-          <button onClick={upload} disabled={loading || !files.length} className="btn-primary flex-1 flex items-center justify-center gap-2">
-            {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><Upload className="w-4 h-4" /> Upload & Encode</>}
+          <button 
+            onClick={captureAndUpload} 
+            disabled={loading || !canCapture || modelLoading} 
+            className={`flex-1 flex items-center justify-center gap-2 rounded-lg font-semibold text-sm transition-all ${canCapture ? 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-surface-700 text-slate-500 cursor-not-allowed'}`}
+          >
+            {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><Camera className="w-4 h-4" /> Capture & Encode</>}
           </button>
         </div>
       </motion.div>

@@ -6,6 +6,18 @@ import {
 } from 'lucide-react'
 import API, { studentAttendanceAPI } from '../api'
 
+import * as faceLandmarksDetection from '@tensorflow-models/face-landmarks-detection'
+import '@tensorflow/tfjs-backend-webgl'
+
+// EAR Calculation Helpers
+const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y)
+const calculateEAR = (eye) => {
+  const v1 = dist(eye[1], eye[5])
+  const v2 = dist(eye[2], eye[4])
+  const h = dist(eye[0], eye[3])
+  return (v1 + v2) / (2.0 * h)
+}
+
 const STATUS = {
   IDLE: 'idle',
   LOCATING: 'locating',
@@ -30,11 +42,16 @@ export default function StudentAttendanceMark() {
   const [cameraError, setCameraError] = useState('')
   const [countdown, setCountdown] = useState(null)
   const [qrCode, setQrCode] = useState('')
+  
+  // Liveness States
+  const [modelLoading, setModelLoading] = useState(false)
+  const [blinkDetected, setBlinkDetected] = useState(false)
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
   const countdownRef = useRef(null)
+  const modelRef = useRef(null)
 
   // Fetch active sessions
   const loadSessions = async () => {
@@ -113,6 +130,70 @@ export default function StudentAttendanceMark() {
     )
   }
 
+  // Liveness Detection Effect
+  useEffect(() => {
+    let animationFrame;
+    let isBlinking = false;
+    
+    async function loadModelAndDetect() {
+      if (statusState !== STATUS.CAMERA) return;
+      if (!modelRef.current) {
+        setModelLoading(true);
+        try {
+          modelRef.current = await faceLandmarksDetection.createDetector(
+            faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
+            { runtime: 'tfjs', refineLandmarks: true }
+          );
+        } catch (e) {
+          setCameraError("Failed to load AI model.");
+        } finally {
+          setModelLoading(false);
+        }
+      }
+
+      async function detectBlink() {
+        if (statusState !== STATUS.CAMERA) return;
+        if (modelRef.current && videoRef.current && videoRef.current.readyState === 4) {
+          try {
+            const faces = await modelRef.current.estimateFaces(videoRef.current);
+            if (faces.length > 0) {
+              const keypoints = faces[0].keypoints;
+              const leftEye = [33, 160, 158, 133, 153, 144].map(idx => keypoints[idx]);
+              const rightEye = [362, 385, 387, 263, 373, 380].map(idx => keypoints[idx]);
+              const leftEAR = calculateEAR(leftEye);
+              const rightEAR = calculateEAR(rightEye);
+              const avgEAR = (leftEAR + rightEAR) / 2;
+
+              if (avgEAR < 0.20) {
+                isBlinking = true;
+              } else {
+                if (isBlinking) {
+                  setBlinkDetected(true);
+                  captureAndSubmit();
+                  return; // Stop detection
+                }
+              }
+            }
+          } catch(e) {}
+        }
+        animationFrame = requestAnimationFrame(detectBlink);
+      }
+      
+      detectBlink();
+    }
+    
+    if (statusState === STATUS.CAMERA) {
+      setBlinkDetected(false);
+      loadModelAndDetect();
+    } else {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+    }
+    
+    return () => {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+    }
+  }, [statusState]);
+
   // Step 2: Open camera
   const handleOpenCamera = () => {
     if (!selectedSession) {
@@ -121,18 +202,7 @@ export default function StudentAttendanceMark() {
     }
     setErrorMsg('')
     setStatus(STATUS.CAMERA)
-    // Start 3-second auto-capture countdown
-    let ct = 3
-    setCountdown(ct)
-    countdownRef.current = setInterval(() => {
-      ct -= 1
-      setCountdown(ct)
-      if (ct <= 0) {
-        clearInterval(countdownRef.current)
-        setCountdown(null)
-        captureAndSubmit()
-      }
-    }, 1000)
+    // No more countdown - auto capture on blink
   }
 
   const captureAndSubmit = async () => {
@@ -198,23 +268,14 @@ export default function StudentAttendanceMark() {
     setSuccessData(null)
     setCountdown(null)
     setQrCode('')
+    setBlinkDetected(false)
     loadSessions()
   }
 
   const handleRetryCamera = () => {
     setStatus(STATUS.CAMERA)
     setErrorMsg('')
-    let ct = 3
-    setCountdown(ct)
-    countdownRef.current = setInterval(() => {
-      ct -= 1
-      setCountdown(ct)
-      if (ct <= 0) {
-        clearInterval(countdownRef.current)
-        setCountdown(null)
-        captureAndSubmit()
-      }
-    }, 1000)
+    setBlinkDetected(false)
   }
 
   return (
@@ -352,11 +413,11 @@ export default function StudentAttendanceMark() {
         {statusState === STATUS.CAMERA && (
           <div className="p-4 space-y-4">
             <div className="text-center">
-              <p className="text-white font-semibold">Look directly at the camera</p>
-              <p className="text-slate-400 text-sm">Auto-capturing in...</p>
+              <p className="text-white font-semibold">Blink your eyes to capture</p>
+              <p className="text-slate-400 text-sm">Liveness detection active...</p>
             </div>
 
-            <div className="relative rounded-2xl overflow-hidden bg-surface-900 aspect-[4/3] max-h-[320px] mx-auto">
+            <div className={`relative rounded-2xl overflow-hidden bg-surface-900 aspect-[4/3] max-h-[320px] mx-auto transition-all ${blinkDetected ? 'ring-8 ring-emerald-500' : ''}`}>
               {cameraError ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-red-400">
                   <CameraOff className="w-12 h-12 opacity-50" />
@@ -364,37 +425,43 @@ export default function StudentAttendanceMark() {
                 </div>
               ) : (
                 <>
-                  <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
+                  {modelLoading && (
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/50 backdrop-blur-sm text-primary-400 text-sm font-medium">
+                       <div className="w-5 h-5 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
+                       Loading AI Models...
+                    </div>
+                  )}
+                  <video ref={videoRef} className="w-full h-full object-cover transform scale-x-[-1]" autoPlay muted playsInline />
                   {/* Oval face guide */}
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="w-36 h-48 rounded-full border-2 border-primary-500/70 border-dashed" />
                   </div>
-                  {/* Countdown */}
-                  {countdown !== null && (
-                    <div className="absolute top-3 right-3 w-12 h-12 rounded-full bg-black/70 flex items-center justify-center">
-                      <span className="text-white font-bold text-xl">{countdown}</span>
+                  {blinkDetected && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/20 backdrop-blur-sm z-20">
+                      <div className="bg-white text-emerald-600 font-bold px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
+                        <CheckCircle className="w-5 h-5" /> Blink Detected!
+                      </div>
                     </div>
                   )}
                   <div className="absolute bottom-2 left-0 right-0 flex justify-center">
                     <div className="px-3 py-1 rounded-full bg-black/60 text-white text-xs flex items-center gap-1.5">
                       <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                      Live
+                      Live AI Tracker
                     </div>
                   </div>
                 </>
               )}
             </div>
-            <canvas ref={canvasRef} className="hidden" />
+            <canvas ref={canvasRef} className="hidden transform scale-x-[-1]" />
 
             <button
               id="manual-capture-btn"
               onClick={() => {
-                if (countdownRef.current) { clearInterval(countdownRef.current); setCountdown(null) }
                 captureAndSubmit()
               }}
               className="btn-primary w-full flex items-center justify-center gap-2"
             >
-              <Camera className="w-4 h-4" /> Capture Now
+              <Camera className="w-4 h-4" /> Force Capture
             </button>
           </div>
         )}

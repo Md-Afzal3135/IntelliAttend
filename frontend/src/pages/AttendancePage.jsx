@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
-import Webcam from 'react-webcam'
+import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Camera, CameraOff, Play, Square, CheckCircle, XCircle,
-  User, Clock, Zap, AlertTriangle, Users, RefreshCw
+  Play, Square, CheckCircle, XCircle,
+  User, Clock, Users, RefreshCw
 } from 'lucide-react'
 import { attendanceAPI, subjectsAPI } from '../api'
 import { useAuth } from '../context/AuthContext'
@@ -11,32 +10,20 @@ import toast from 'react-hot-toast'
 
 export default function AttendancePage() {
   const { user } = useAuth()
-  const webcamRef = useRef(null)
 
   // ─── State ─────────────────────────────────────────────────────────────────
   const [subjects, setSubjects]           = useState([])
-  const [enrolledStudents, setEnrolled]   = useState([])   // only enrolled in selected subject
+  const [enrolledStudents, setEnrolled]   = useState([])
   const [selectedSubject, setSelected]    = useState('')
   const [activeSession, setSession]       = useState(null)
   const [records, setRecords]             = useState([])
-  const [cameraOn, setCameraOn]           = useState(false)
-  const [scanning, setScanning]           = useState(false)
-  const [lastRecognized, setLastRec]      = useState(null)
   const [loading, setLoading]             = useState(false)
-  const [aiAvailable, setAiAvailable]     = useState(true)
   const [markingId, setMarkingId]         = useState(null)
   const [loadingStudents, setLoadStu]     = useState(false)
-  const scanInterval = useRef(null)
 
   // ─── Bootstrap ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    // Subjects — backend already filters by teacher role, admin sees all
     subjectsAPI.list().then(r => setSubjects(r.data.results || r.data)).catch(() => {})
-    // Health check routed through Django (/api/ai/health/) to avoid CORS.
-    // We optimistically set online=true and only flip if Django explicitly says offline.
-    attendanceAPI.healthCheck()
-      .then(r => setAiAvailable(r.data?.status === 'running' || r.status === 200))
-      .catch(() => setAiAvailable(true))   // network error → assume online, let actual call reveal the truth
   }, [])
 
   // ─── Load enrolled students when subject changes ───────────────────────────
@@ -65,7 +52,6 @@ export default function AttendancePage() {
 
       const { data } = await attendanceAPI.sessions.get(session.id)
       setRecords(data.records || [])
-      setCameraOn(true)
       toast.success('Attendance session started!')
     } catch {
       toast.error('Failed to start session. Please try again.')
@@ -76,47 +62,12 @@ export default function AttendancePage() {
 
   const endSession = async () => {
     if (!activeSession) return
-    setScanning(false)
-    if (scanInterval.current) clearInterval(scanInterval.current)
-    setCameraOn(false)
     try {
       await attendanceAPI.sessions.complete(activeSession.id)
       toast.success('Session completed!')
     } catch {}
     setSession(null)
-    setLastRec(null)
   }
-
-  // ─── AI Scanning ───────────────────────────────────────────────────────────
-  const startScanning = () => {
-    setScanning(true)
-    scanInterval.current = setInterval(captureAndRecognize, 2000)
-  }
-
-  const stopScanning = () => {
-    setScanning(false)
-    if (scanInterval.current) clearInterval(scanInterval.current)
-  }
-
-  const captureAndRecognize = useCallback(async () => {
-    if (!webcamRef.current || !activeSession) return
-    const imageSrc = webcamRef.current.getScreenshot()
-    if (!imageSrc) return
-    const base64 = imageSrc.split(',')[1]
-    try {
-      const { data } = await attendanceAPI.recognizeFace({
-        frame: base64,
-        session_id: activeSession.id,
-      })
-      if (data.recognized) {
-        setLastRec({ name: data.student_name, id: data.student_display_id, confidence: data.confidence })
-        if (data.attendance_marked) {
-          toast.success(`✅ ${data.student_name} marked present!`, { duration: 3000 })
-          refreshRecords()
-        }
-      }
-    } catch {}
-  }, [activeSession])
 
   const refreshRecords = async () => {
     if (!activeSession) return
@@ -125,8 +76,6 @@ export default function AttendancePage() {
       setRecords(data.records || [])
     } catch {}
   }
-
-
 
   // ─── Manual attendance ─────────────────────────────────────────────────────
   const manualMark = async (studentId, status) => {
@@ -170,19 +119,13 @@ export default function AttendancePage() {
   })
 
   return (
-    <div className="space-y-5 animate-in">
+    <div className="space-y-5 animate-in max-w-5xl mx-auto">
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 className="page-title">Face Recognition Attendance</h1>
-          <p className="text-muted mt-1">Real-time AI-powered attendance marking</p>
+          <h1 className="page-title">Session Management</h1>
+          <p className="text-muted mt-1">Control active class attendance and manual overrides</p>
         </div>
-        {!aiAvailable && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
-            <AlertTriangle className="w-3 h-3" />
-            AI service offline — manual mode only
-          </div>
-        )}
       </div>
 
       {/* ── Subject Selector / Session Header ─────────────────────────────── */}
@@ -243,153 +186,13 @@ export default function AttendancePage() {
       )}
 
       {/*
-        ── Main Two-Panel Layout (Flexbox) ──────────────────────────────────────
-        Left (flex: 2):  Camera view + scan controls + recognition log
-        Right (flex: 1): Enrolled students roster with manual mark buttons
-
-        Desktop: flex-direction: row (side-by-side)
-        Mobile:  flex-direction: column (stacked, via inline media query below)
+        ── Main Layout (Dashboard) ──────────────────────────────────────
+        Full width: Enrolled students roster with manual mark buttons
       */}
       <div
-        className="attendance-flex-container"
-        style={{
-          display: 'flex',
-          flexDirection: 'row',
-          gap: 20,
-          alignItems: 'flex-start',
-        }}
+        className="glass-card w-full flex flex-col overflow-hidden max-h-[700px]"
       >
-        {/* ── LEFT PANEL: Camera ─────────────────────────────────────────── */}
-        <div style={{ flex: '2 1 380px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="glass-card p-4" style={{ position: 'relative', overflow: 'hidden' }}>
-            {cameraOn ? (
-              <>
-                <Webcam
-                  ref={webcamRef}
-                  screenshotFormat="image/jpeg"
-                  className="w-full rounded-xl"
-                  videoConstraints={{ width: 640, height: 480, facingMode: 'user' }}
-                />
-                {/* Face scan overlay */}
-                <div style={{ position: 'absolute', inset: 16, pointerEvents: 'none' }}>
-                  {scanning && (
-                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
-                      <div className="face-scan-overlay" />
-                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Zap className="w-6 h-6 text-primary-400 animate-pulse" />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Recognition result toast overlay */}
-                <AnimatePresence>
-                  {lastRecognized && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -20 }}
-                      style={{
-                        position: 'absolute',
-                        bottom: 80,
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        background: 'rgba(15,23,42,0.9)',
-                        backdropFilter: 'blur(8px)',
-                        border: '1px solid rgba(16,185,129,0.4)',
-                        borderRadius: 12,
-                        padding: '8px 16px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      <CheckCircle className="w-5 h-5 text-emerald-400" />
-                      <div>
-                        <p className="text-white text-sm font-semibold">{lastRecognized.name}</p>
-                        <p className="text-xs text-slate-400">
-                          ID: {lastRecognized.id} · {Math.round((lastRecognized.confidence || 0) * 100)}% match
-                        </p>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Camera control buttons */}
-                <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  {aiAvailable && (
-                    <button
-                      onClick={scanning ? stopScanning : startScanning}
-                      style={{ flex: '1 1 auto' }}
-                      className={`flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-medium transition-all ${
-                        scanning
-                          ? 'bg-red-600/20 border border-red-500/30 text-red-400 hover:bg-red-600/30'
-                          : 'btn-primary'
-                      }`}
-                    >
-                      {scanning
-                        ? <><XCircle className="w-4 h-4" /> Stop AI Scan</>
-                        : <><Zap className="w-4 h-4" /> Start AI Scan</>
-                      }
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setCameraOn(false)}
-                    className="btn-secondary flex items-center gap-2"
-                  >
-                    <CameraOff className="w-4 h-4" /> Close
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', gap: 16 }} className="text-slate-500">
-                <Camera className="w-16 h-16 opacity-30" />
-                <p className="text-sm">Camera is off</p>
-                {activeSession && (
-                  <button onClick={() => setCameraOn(true)} className="btn-primary flex items-center gap-2">
-                    <Camera className="w-4 h-4" /> Open Camera
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Live recognition log */}
-          {lastRecognized && (
-            <div className="glass-card p-4">
-              <h3 className="text-xs text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <Clock className="w-3 h-3" /> Last Recognized
-              </h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold text-sm flex-shrink-0">
-                  {lastRecognized.name?.charAt(0)}
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <p className="text-white text-sm font-semibold truncate">{lastRecognized.name}</p>
-                  <p className="text-slate-500 text-xs">
-                    {lastRecognized.id} · {Math.round((lastRecognized.confidence || 0) * 100)}% confidence
-                  </p>
-                </div>
-                <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0 ml-auto" />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ── RIGHT PANEL: Enrolled Students ─────────────────────────────── */}
-        <div
-          className="glass-card"
-          style={{
-            flex: '1 1 280px',
-            minWidth: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            maxHeight: 640,
-            overflow: 'hidden',
-          }}
-        >
-          {/* Panel header */}
+        {/* Panel header */}
           <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Users className="w-4 h-4 text-primary-400" />
@@ -512,19 +315,6 @@ export default function AttendancePage() {
           </div>
         </div>
       </div>
-
-      {/* Responsive style override for mobile */}
-      <style>{`
-        @media (max-width: 768px) {
-          .attendance-flex-container {
-            flex-direction: column !important;
-          }
-          .attendance-flex-container > div {
-            flex: none !important;
-            width: 100% !important;
-          }
-        }
-      `}</style>
     </div>
   )
 }

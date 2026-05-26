@@ -391,13 +391,15 @@ class StudentViewSet(viewsets.ModelViewSet):
         # Try primary URL first, then fallback
         for ai_url in urls_to_try:
             try:
+                # Ensure it's not a tuple if DRF MultiPartParser acted strangely
+                if isinstance(uploaded_file, (list, tuple)):
+                    uploaded_file = uploaded_file[0]
+                    
                 uploaded_file.seek(0)                              # reset pointer before reading
                 img_bytes = uploaded_file.read()
-                import io as _io
-                file_obj = _io.BytesIO(img_bytes)        # wrap bytes so requests can .seek()/.read()
-                file_obj.name = uploaded_file.name       # set name attribute so requests can read it correctly
+                file_tuple = (uploaded_file.name, img_bytes, getattr(uploaded_file, 'content_type', 'image/jpeg'))
                 
-                resp = requests.post(f"{ai_url}/recognize", files={'image': file_obj}, timeout=30)
+                resp = requests.post(f"{ai_url}/recognize", files={'image': file_tuple}, timeout=30)
                 if resp.status_code == 200:
                     res_data = resp.json()
                     if res_data.get('success') and res_data.get('faces_detected', 0) > 0:
@@ -802,12 +804,18 @@ def recognize_face(request):
 
     ai_url = os.getenv('AI_SERVICE_URL', 'https://mdafzal335-intelliattend-ai-service.hf.space').rstrip('/')
     try:
+        # Ensure it's not a tuple if DRF MultiPartParser acted strangely
+        if isinstance(uploaded_file, (list, tuple)):
+            uploaded_file = uploaded_file[0]
+
         # Seek to 0 to ensure we read from the beginning
         uploaded_file.seek(0)
+        img_bytes = uploaded_file.read()
+        file_tuple = (uploaded_file.name, img_bytes, getattr(uploaded_file, 'content_type', 'image/jpeg'))
         
         resp = requests.post(
             f"{ai_url}/recognize",
-            files={'image': uploaded_file},
+            files={'image': file_tuple},
             timeout=20,
         )
 
@@ -1343,15 +1351,17 @@ def verify_and_mark_attendance(request):
     ).rstrip('/') + '/recognize'
 
     try:
-        import io as _io
+        # Ensure it's not a tuple if DRF MultiPartParser acted strangely
+        if isinstance(image_file, (list, tuple)):
+            image_file = image_file[0]
+
         # Seek to 0 in case the file pointer was already advanced
         image_file.seek(0)
         raw = image_file.read()                           # read into bytes
-        file_obj = _io.BytesIO(raw)                       # wrap in BytesIO for .seek()/.read() support
-        file_obj.name = image_file.name                   # assign name so requests knows how to set filename
+        file_tuple = (image_file.name, raw, getattr(image_file, 'content_type', 'image/jpeg'))
 
         # Call the Hugging Face microservice
-        resp = requests.post(microservice_url, files={'image': file_obj}, timeout=30)
+        resp = requests.post(microservice_url, files={'image': file_tuple}, timeout=30)
         
         if resp.status_code != 200:
             return Response({

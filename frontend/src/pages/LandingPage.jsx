@@ -43,8 +43,7 @@ export default function LandingPage() {
           <span className="font-heading font-bold text-white">IntelliAttend</span>
         </div>
         <div className="flex items-center gap-3">
-          <Link to="/login" className="btn-ghost text-sm">Login</Link>
-          <Link to="/register" className="btn-primary text-sm py-2 px-4">Get Started</Link>
+          <Link to="/login" className="btn-primary text-sm py-2 px-4">Login</Link>
         </div>
       </nav>
 
@@ -78,11 +77,8 @@ export default function LandingPage() {
           </motion.p>
 
           <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link to="/register" className="btn-primary flex items-center gap-2 justify-center text-base">
-              Start Free Trial <ArrowRight className="w-4 h-4" />
-            </Link>
-            <Link to="/login" className="btn-secondary flex items-center gap-2 justify-center text-base">
-              Sign In to Demo
+            <Link to="/login" className="btn-primary flex items-center gap-2 justify-center text-base">
+              Sign In to Demo <ArrowRight className="w-4 h-4" />
             </Link>
           </motion.div>
 
@@ -154,8 +150,8 @@ export default function LandingPage() {
             <p className="text-slate-400 mb-8">
               Join thousands of institutions using IntelliAttend for smarter, faster, fraud-proof attendance tracking.
             </p>
-            <Link to="/register" className="btn-primary inline-flex items-center gap-2">
-              Get Started Today <ChevronRight className="w-4 h-4" />
+            <Link to="/login" className="btn-primary inline-flex items-center gap-2">
+              Sign In <ChevronRight className="w-4 h-4" />
             </Link>
           </motion.div>
         </div>

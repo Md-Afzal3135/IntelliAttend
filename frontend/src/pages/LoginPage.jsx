@@ -184,12 +184,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center text-muted mt-6">
-            Don't have an account?{' '}
-            <Link to="/register" className="text-primary-400 hover:text-primary-300 font-medium transition-colors">
-              Register here
-            </Link>
-          </p>
+
         </motion.div>
       </div>
     </div>

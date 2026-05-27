@@ -341,6 +341,9 @@ export default function StudentManagement() {
           <h1 className="page-title">Student Management</h1>
           <p className="text-muted mt-1">Manage student profiles and face registration</p>
         </div>
+        <button onClick={() => setShowAdd(true)} className="btn-primary flex items-center gap-2">
+          <Plus className="w-4 h-4" /> Add Student
+        </button>
       </div>
 
       {/* Filters */}

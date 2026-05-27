@@ -122,11 +122,19 @@ function dataURLtoFile(dataurl, filename) {
   return new File([u8arr], filename, { type: mime })
 }
 
+// EAR Calculation Helpers
+const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y)
+const calculateEAR = (eye) => {
+  const v1 = dist(eye[1], eye[5])
+  const v2 = dist(eye[2], eye[4])
+  const h = dist(eye[0], eye[3])
+  return (v1 + v2) / (2.0 * h)
+}
+
 function FaceUploadModal({ student, onClose, onSuccess }) {
   const webcamRef = useRef(null)
   const [model, setModel] = useState(null)
-  const [movements, setMovements] = useState({ left: false, right: false, up: false, down: false })
-  const [canCapture, setCanCapture] = useState(false)
+  const [blinkDetected, setBlinkDetected] = useState(false)
   const [loading, setLoading] = useState(false)
   const [modelLoading, setModelLoading] = useState(true)
 
@@ -149,14 +157,10 @@ function FaceUploadModal({ student, onClose, onSuccess }) {
   }, [])
 
   useEffect(() => {
-    if (movements.left && movements.right && movements.up && movements.down) {
-      setCanCapture(true)
-    }
-  }, [movements])
-
-  useEffect(() => {
     let animationFrame;
-    async function detectPose() {
+    let isBlinking = false;
+
+    async function detectBlink() {
       if (model && webcamRef.current && webcamRef.current.video && webcamRef.current.video.readyState === 4) {
         const video = webcamRef.current.video;
         try {
@@ -164,32 +168,41 @@ function FaceUploadModal({ student, onClose, onSuccess }) {
           
           if (faces.length > 0) {
             const keypoints = faces[0].keypoints;
-            // Simple heuristic based on relative depths (z-axis) and positioning
-            const nose = keypoints[1];
-            const leftJaw = keypoints[234];
-            const rightJaw = keypoints[454];
-            const topForehead = keypoints[10];
-            const chin = keypoints[152];
+            const leftEye = [33, 160, 158, 133, 153, 144].map(idx => keypoints[idx]);
+            const rightEye = [362, 385, 387, 263, 373, 380].map(idx => keypoints[idx]);
+            const leftEAR = calculateEAR(leftEye);
+            const rightEAR = calculateEAR(rightEye);
+            const avgEAR = (leftEAR + rightEAR) / 2;
 
-            // YAW (Left / Right) -> Comparing z-depth of jawlines relative to nose
-            if (leftJaw.z > nose.z + 15) setMovements(prev => ({ ...prev, right: true }));
-            if (rightJaw.z > nose.z + 15) setMovements(prev => ({ ...prev, left: true }));
-            
-            // PITCH (Up / Down) -> Comparing y-axis distances
-            const faceHeight = Math.abs(topForehead.y - chin.y);
-            const noseToChin = Math.abs(nose.y - chin.y);
-            const pitchRatio = noseToChin / faceHeight;
-
-            if (pitchRatio > 0.45) setMovements(prev => ({ ...prev, down: true }));
-            if (pitchRatio < 0.25) setMovements(prev => ({ ...prev, up: true }));
+            if (avgEAR < 0.20) {
+              isBlinking = true;
+            } else {
+              if (isBlinking) {
+                setBlinkDetected(true);
+                return; // Stop detection loop once blink is detected
+              }
+            }
           }
         } catch(e) {}
       }
-      animationFrame = requestAnimationFrame(detectPose);
+      animationFrame = requestAnimationFrame(detectBlink);
     }
-    if (model) detectPose();
-    return () => cancelAnimationFrame(animationFrame);
-  }, [model]);
+    
+    if (model && !blinkDetected) {
+      detectBlink();
+    }
+    
+    return () => {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+    }
+  }, [model, blinkDetected]);
+
+  // Auto capture when blink is detected
+  useEffect(() => {
+    if (blinkDetected && !loading) {
+      captureAndUpload();
+    }
+  }, [blinkDetected]);
 
   const captureAndUpload = async () => {
     if (!webcamRef.current) return
@@ -209,10 +222,12 @@ function FaceUploadModal({ student, onClose, onSuccess }) {
         onClose()
       } else {
         toast.error(data.message || 'Face not detected')
+        setBlinkDetected(false) // reset to try again
       }
     } catch (err) {
       const detail = err.response?.data?.detail || err.response?.data?.error || 'Upload failed'
       toast.error(detail)
+      setBlinkDetected(false) // reset to try again
     } finally {
       setLoading(false)
     }
@@ -229,37 +244,47 @@ function FaceUploadModal({ student, onClose, onSuccess }) {
           <button onClick={onClose} className="btn-ghost p-2"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="relative rounded-xl overflow-hidden border-2 border-primary-500/30 mb-4 bg-black flex items-center justify-center min-h-[200px]">
+        <div className="text-center mb-2">
+          <p className="text-white font-semibold">Blink your eyes to capture</p>
+          <p className="text-slate-400 text-xs">Look directly at the camera...</p>
+        </div>
+
+        <div className={`relative rounded-xl overflow-hidden border-2 mb-4 bg-black flex items-center justify-center min-h-[300px] transition-all ${blinkDetected ? 'border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'border-primary-500/30'}`}>
           {modelLoading ? (
             <div className="text-center text-primary-400 text-sm flex flex-col items-center">
               <div className="w-5 h-5 border-2 border-primary-400 border-t-transparent rounded-full animate-spin mb-2" />
               Loading AI Models...
             </div>
           ) : (
-            <Webcam 
-              ref={webcamRef}
-              screenshotFormat="image/jpeg"
-              videoConstraints={{ facingMode: "user" }}
-              className="w-full transform scale-x-[-1]"
-            />
+            <>
+              <Webcam 
+                ref={webcamRef}
+                screenshotFormat="image/jpeg"
+                videoConstraints={{ facingMode: "user" }}
+                className="w-full transform scale-x-[-1]"
+              />
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="w-36 h-48 rounded-full border-2 border-primary-500/70 border-dashed" />
+              </div>
+              {blinkDetected && (
+                <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/20 backdrop-blur-sm z-20">
+                  <div className="bg-white text-emerald-600 font-bold px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5" /> Blink Detected!
+                  </div>
+                </div>
+              )}
+            </>
           )}
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 w-full text-center text-xs font-semibold mb-5">
-          <div className={`p-2 rounded transition-colors ${movements.left ? 'bg-emerald-500 text-white shadow-lg' : 'bg-surface-700 text-slate-400'}`}>Look Left</div>
-          <div className={`p-2 rounded transition-colors ${movements.right ? 'bg-emerald-500 text-white shadow-lg' : 'bg-surface-700 text-slate-400'}`}>Look Right</div>
-          <div className={`p-2 rounded transition-colors ${movements.up ? 'bg-emerald-500 text-white shadow-lg' : 'bg-surface-700 text-slate-400'}`}>Look Up</div>
-          <div className={`p-2 rounded transition-colors ${movements.down ? 'bg-emerald-500 text-white shadow-lg' : 'bg-surface-700 text-slate-400'}`}>Look Down</div>
         </div>
 
         <div className="flex gap-3">
           <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
           <button 
             onClick={captureAndUpload} 
-            disabled={loading || !canCapture || modelLoading} 
-            className={`flex-1 flex items-center justify-center gap-2 rounded-lg font-semibold text-sm transition-all ${canCapture ? 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-surface-700 text-slate-500 cursor-not-allowed'}`}
+            disabled={loading || modelLoading} 
+            className="flex-1 flex items-center justify-center gap-2 rounded-lg font-semibold text-sm transition-all bg-surface-700 text-slate-300 hover:bg-surface-600"
           >
-            {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><Camera className="w-4 h-4" /> Capture & Encode</>}
+            {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><Camera className="w-4 h-4" /> Force Capture</>}
           </button>
         </div>
       </motion.div>

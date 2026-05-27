@@ -39,6 +39,7 @@ html:not(.dark) .border-primary-500\/10 { border-color: rgba(99,102,241,0.12) !i
 html:not(.dark) .border-primary-500\/20 { border-color: rgba(99,102,241,0.2) !important; }
 
 html:not(.dark) .text-white  { color: #0f172a !important; }
+html:not(.dark) .text-slate-200 { color: #1e293b !important; }
 html:not(.dark) .text-slate-300 { color: #334155 !important; }
 html:not(.dark) .text-slate-400 { color: #475569 !important; }
 html:not(.dark) .text-slate-500 { color: #64748b !important; }

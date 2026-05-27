@@ -1,7 +1,11 @@
 import axios from 'axios'
 
+// Normalize the base URL: ensure it always ends with /api
+const rawUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080/api'
+const BASE_URL = rawUrl.endsWith('/api') ? rawUrl : `${rawUrl.replace(/\/+$/, '')}/api`
+
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8080/api',
+  baseURL: BASE_URL,
   headers: { 'Content-Type': 'application/json' },
 })
 
@@ -23,7 +27,7 @@ API.interceptors.response.use(
         const refresh = localStorage.getItem('refresh_token')
         if (refresh) {
           const { data } = await axios.post(
-            `${import.meta.env.VITE_API_URL || 'http://localhost:8080/api'}/auth/refresh/`,
+            `${BASE_URL}/auth/refresh/`,
             { refresh }
           )
           localStorage.setItem('access_token', data.access)

@@ -4,18 +4,26 @@ IntelliAttend Django Settings
 import os
 from pathlib import Path
 from datetime import timedelta
-from dotenv import load_dotenv
+import environ
 
-load_dotenv()
-load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent.parent / '.env', override=False)
+# Initialize environ and set default values
+env = environ.Env()
 
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-intelliattend-dev-key-change-in-production')
+# Read .env file from the parent directory (backend/.env)
+environ.Env.read_env(BASE_DIR / '.env')
 
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
+# Quick-start development settings - unsuitable for production
+# See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = env('SECRET_KEY')
+
+DEBUG = env.bool('DEBUG', default=False)
+
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
 
 # Application definition
 INSTALLED_APPS = [
@@ -70,19 +78,20 @@ WSGI_APPLICATION = 'intelliattend.wsgi.application'
 import dj_database_url
 
 # Database
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
+# https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
-if os.getenv('DATABASE_URL'):
-    DATABASES['default'] = dj_database_url.config(
-        default=os.getenv('DATABASE_URL'),
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
+db_config = dj_database_url.config(
+    default=env('DATABASE_URL'),
+    conn_max_age=600,
+)
+if 'sqlite' not in db_config.get('ENGINE', ''):
+    if 'OPTIONS' not in db_config:
+        db_config['OPTIONS'] = {}
+    db_config['OPTIONS']['sslmode'] = 'require'
+
+DATABASES = {
+    'default': db_config
+}
 
 
 # Password validation
